@@ -3,8 +3,10 @@ name = "malo"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "fontmake>=3.12.2",
     "fonttools>=4.66.1",
     "skia-pathops>=0.9.2",
+    "typing-extensions>=4.16.0",
 ]
 
 [dependency-groups]

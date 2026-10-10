@@ -1,8 +1,10 @@
-"""Build Malo: Meslo LG S Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo: Hack Latin glyphs with alt-hack alternates, plus WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
 import math
 import shutil
+import subprocess
+import sys
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -20,9 +22,13 @@ UPSTREAM = ROOT / "sources" / "upstream"
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
-MESLO_URL = "https://github.com/andreberg/Meslo-Font/raw/master/dist/v1.2.1/Meslo%20LG%20v1.2.1.zip"
-MESLO_ZIP = UPSTREAM / "meslo" / "meslo-lg-v1.2.1.zip"
-MESLO_DIR = UPSTREAM / "meslo" / "extracted" / "Meslo LG v1.2.1"
+HACK_URL = "https://github.com/source-foundry/Hack/archive/refs/tags/v3.003.zip"
+HACK_ZIP = UPSTREAM / "hack" / "hack-v3.003.zip"
+HACK_DIR = UPSTREAM / "hack" / "Hack-3.003"
+ALT_HACK_COMMIT = "9fab7328cfc208046cb7f3d713ec97a724d8219a"
+ALT_HACK_URL = f"https://github.com/source-foundry/alt-hack/archive/{ALT_HACK_COMMIT}.zip"
+ALT_HACK_ZIP = UPSTREAM / "hack" / "alt-hack.zip"
+ALT_HACK_DIR = UPSTREAM / "hack" / f"alt-hack-{ALT_HACK_COMMIT}"
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
@@ -32,12 +38,19 @@ WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 FAMILY = "Malo"
 VERSION = "0.1"
 
-# Meslo LG S: 2048 upem, every glyph advances 1233, italic leans 11 degrees around half the cap height.
+# alt-hack glyph sets: slashed zero, and the flat DejaVu/Menlo foot for i and its accented forms.
+ALTERNATES = ("u0030-forwardslash", "*-slab")
+
+# Hack: 2048 upem, every glyph advances 1233, italic leans 11 degrees around half the cap height.
 UPEM = 2048
 CJK_ADVANCE = 2 * 1233
 CJK_SCALE = (0.95, 0.95)
 ITALIC_ANGLE = 11
 ITALIC_PIVOT_Y = 1493 / 2
+
+# Line metrics of Meslo LG S: 2584 units per line instead of Hack's 2384.
+LINE_ASCENT = 2001
+LINE_DESCENT = 583
 
 CJK_RANGES = (
     (0x2460, 0x24FF),
@@ -64,12 +77,12 @@ class Style:
     italic: bool
 
     @property
-    def meslo_path(self) -> Path:
-        return MESLO_DIR / f"MesloLGS-{self.name.replace(' ', '')}.ttf"
+    def slug(self) -> str:
+        return self.name.replace(" ", "")
 
     @property
     def postscript_name(self) -> str:
-        return f"{FAMILY}-{self.name.replace(' ', '')}"
+        return f"{FAMILY}-{self.slug}"
 
 
 STYLES = (
@@ -90,11 +103,30 @@ def download(url: str, dest: Path) -> None:
 
 
 def ensure_sources() -> None:
-    download(MESLO_URL, MESLO_ZIP)
+    download(HACK_URL, HACK_ZIP)
+    download(ALT_HACK_URL, ALT_HACK_ZIP)
     download(WENYUAN_URL, WENYUAN_VF)
-    if not MESLO_DIR.is_dir():
-        with zipfile.ZipFile(MESLO_ZIP) as archive:
-            archive.extractall(MESLO_DIR.parent)
+    for archive, target in ((HACK_ZIP, HACK_DIR), (ALT_HACK_ZIP, ALT_HACK_DIR)):
+        if not target.is_dir():
+            with zipfile.ZipFile(archive) as zipped:
+                zipped.extractall(target.parent)
+
+
+def latin(style: Style) -> Path:
+    """Compile the Hack UFO with the alt-hack glyphs dropped in; fontmake emits no hinting."""
+    path = CACHE / f"Hack-{style.slug}.ttf"
+    if path.exists():
+        return path
+    print(f"compile {path.stem}")
+    ufo = path.with_suffix(".ufo")
+    shutil.rmtree(ufo, ignore_errors=True)
+    shutil.copytree(HACK_DIR / "source" / ufo.name, ufo)
+    for pattern in ALTERNATES:
+        for glif in (ALT_HACK_DIR / "glyphs").glob(f"{pattern}/{style.slug.lower()}/*.glif"):
+            shutil.copy(glif, ufo / "glyphs" / glif.name)
+    fontmake = [sys.executable, "-m", "fontmake", "-u", ufo, "-o", "ttf", "--output-dir", CACHE]
+    subprocess.run([*fontmake, "--verbose", "WARNING"], check=True)
+    return path
 
 
 def subset_wenyuan() -> None:
@@ -190,15 +222,14 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
     latin["OS/2"].recalcCodePageRanges(latin)
 
 
-def strip_hinting(font: TTFont) -> None:
-    for tag in ("cvt ", "fpgm", "prep", "gasp", "hdmx", "LTSH", "VDMX"):
-        if tag in font:
-            del font[tag]
-    glyf = font["glyf"]
-    for name in font.getGlyphOrder():
-        glyf[name].removeHinting()
-    # head flags 2-4 describe how instructions affect scaling and advances.
-    font["head"].flags &= ~0b11100
+def set_line_metrics(font: TTFont) -> None:
+    hhea = font["hhea"]
+    os2 = font["OS/2"]
+    hhea.ascent = LINE_ASCENT
+    hhea.descent = -LINE_DESCENT
+    os2.usWinAscent = LINE_ASCENT
+    os2.usWinDescent = LINE_DESCENT
+    os2.sTypoLineGap = LINE_ASCENT + LINE_DESCENT - os2.sTypoAscender + os2.sTypoDescender
 
 
 def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
@@ -220,16 +251,17 @@ def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
 
 
 def build(style: Style) -> Path:
-    latin = TTFont(style.meslo_path)
+    font = TTFont(latin(style))
     cjk = TTFont(cjk_upright(style.weight))
     if style.italic:
         skew_glyphs(cjk)
-    merge_cjk(latin, cjk)
-    strip_hinting(latin)
-    rename(latin, style, cjk["name"].getDebugName(0))
+    merge_cjk(font, cjk)
+    set_line_metrics(font)
+    rename(font, style, cjk["name"].getDebugName(0))
+    font["OS/2"].fsType = 0
     OUTPUT.mkdir(parents=True, exist_ok=True)
     output = OUTPUT / f"{style.postscript_name}.ttf"
-    latin.save(output)
+    font.save(output)
     return output
 
 
