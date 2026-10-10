@@ -9,5 +9,4 @@ refs
 .venv
 __pycache__
 build/
-fonts/
 sources/upstream/
