@@ -1,0 +1,13 @@
+# local dev
+.agents
+.claude
+.codex
+.mcp.json
+refs
+
+# build
+.venv
+__pycache__
+build/
+fonts/
+sources/upstream/
