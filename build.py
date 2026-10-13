@@ -1,4 +1,4 @@
-"""Build Malo: Meslo LG S Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo: Meslo LG M Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
 import math
@@ -32,7 +32,7 @@ WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 FAMILY = "Malo"
 VERSION = "0.1"
 
-# Meslo LG S: 2048 upem, every glyph advances 1233, italic leans 11 degrees around half the cap height.
+# Meslo LG M: 2048 upem, 1.36 em line height, every glyph advances 1233, italic leans 11 degrees around half the cap height.
 UPEM = 2048
 CJK_ADVANCE = 2 * 1233
 CJK_SCALE = (0.95, 0.95)
@@ -65,7 +65,7 @@ class Style:
 
     @property
     def meslo_path(self) -> Path:
-        return MESLO_DIR / f"MesloLGS-{self.name.replace(' ', '')}.ttf"
+        return MESLO_DIR / f"MesloLGM-{self.name.replace(' ', '')}.ttf"
 
     @property
     def postscript_name(self) -> str:
