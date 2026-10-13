@@ -1,16 +1,15 @@
-"""Build Malo: Meslo LG M Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo: Menlo Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
 import math
 import shutil
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from fontTools import subset
 from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
 from fontTools.varLib import instancer
@@ -20,9 +19,8 @@ UPSTREAM = ROOT / "sources" / "upstream"
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
-MESLO_URL = "https://github.com/andreberg/Meslo-Font/raw/master/dist/v1.2.1/Meslo%20LG%20v1.2.1.zip"
-MESLO_ZIP = UPSTREAM / "meslo" / "meslo-lg-v1.2.1.zip"
-MESLO_DIR = UPSTREAM / "meslo" / "extracted" / "Meslo LG v1.2.1"
+MENLO_SYSTEM = Path("/System/Library/Fonts/Menlo.ttc")
+MENLO_TTC = UPSTREAM / "Menlo.ttc"
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
@@ -32,12 +30,14 @@ WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 FAMILY = "Malo"
 VERSION = "0.1"
 
-# Meslo LG M: 2048 upem, 1.36 em line height, every glyph advances 1233, italic leans 11 degrees around half the cap height.
 UPEM = 2048
-CJK_ADVANCE = 2 * 1233
-CJK_SCALE = (0.95, 0.95)
+LATIN_ADVANCE = 1233
+CAP_HEIGHT = 1493
+LINE_HEIGHT = 1.4
+CJK_ADVANCE = 2 * LATIN_ADVANCE
+CJK_SCALE = 0.95
 ITALIC_ANGLE = 11
-ITALIC_PIVOT_Y = 1493 / 2
+ITALIC_PIVOT_Y = CAP_HEIGHT / 2
 
 CJK_RANGES = (
     (0x2460, 0x24FF),
@@ -64,8 +64,8 @@ class Style:
     italic: bool
 
     @property
-    def meslo_path(self) -> Path:
-        return MESLO_DIR / f"MesloLGM-{self.name.replace(' ', '')}.ttf"
+    def menlo_name(self) -> str:
+        return f"Menlo-{self.name.replace(' ', '')}"
 
     @property
     def postscript_name(self) -> str:
@@ -90,11 +90,15 @@ def download(url: str, dest: Path) -> None:
 
 
 def ensure_sources() -> None:
-    download(MESLO_URL, MESLO_ZIP)
+    if not MENLO_TTC.exists():
+        MENLO_TTC.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(MENLO_SYSTEM, MENLO_TTC)
     download(WENYUAN_URL, WENYUAN_VF)
-    if not MESLO_DIR.is_dir():
-        with zipfile.ZipFile(MESLO_ZIP) as archive:
-            archive.extractall(MESLO_DIR.parent)
+
+
+def load_menlo(style: Style) -> TTFont:
+    fonts = TTCollection(MENLO_TTC).fonts
+    return next(font for font in fonts if font["name"].getDebugName(6) == style.menlo_name)
 
 
 def subset_wenyuan() -> None:
@@ -125,49 +129,40 @@ def decompose_composites(font: TTFont) -> None:
             glyf[name] = pen.glyph()
 
 
-def fit_cjk_glyphs(font: TTFont) -> None:
+def transform_glyphs(font: TTFont, matrix: tuple) -> None:
     glyf = font["glyf"]
     hmtx = font["hmtx"]
-    scale_x, scale_y = CJK_SCALE
-    shift_x = (CJK_ADVANCE - UPEM * scale_x) / 2
     for name in font.getGlyphOrder():
         glyph = glyf[name]
         if glyph.numberOfContours > 0:
-            glyph.coordinates.scale((scale_x, scale_y))
-            glyph.coordinates.translate((shift_x, 0))
+            glyph.coordinates.transform(matrix)
             glyph.recalcBounds(glyf)
-        hmtx[name] = (CJK_ADVANCE, getattr(glyph, "xMin", 0))
+            hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
 def skew_glyphs(font: TTFont) -> None:
     skew = math.tan(math.radians(ITALIC_ANGLE))
-    glyf = font["glyf"]
-    hmtx = font["hmtx"]
-    for name in font.getGlyphOrder():
-        glyph = glyf[name]
-        if glyph.numberOfContours <= 0:
-            continue
-        glyph.coordinates.transform(((1, 0), (skew, 1), (-skew * ITALIC_PIVOT_Y, 0)))
-        glyph.recalcBounds(glyf)
-        advance, _ = hmtx[name]
-        hmtx[name] = (advance, glyph.xMin)
+    transform_glyphs(font, ((1, 0), (skew, 1), (-skew * ITALIC_PIVOT_Y, 0)))
 
 
-def cjk_upright(weight: int) -> Path:
+def cjk_upright(weight: int) -> TTFont:
     path = CACHE / f"wenyuan-{weight}.ttf"
-    if path.exists():
-        return path
-    print(f"instantiate wenyuan {weight}")
-    font = TTFont(WENYUAN_SUBSET)
-    instancer.instantiateVariableFont(
-        font, {"wght": weight, "ital": 0}, inplace=True, optimize=False
-    )
-    scale_upem(font, UPEM)
-    decompose_composites(font)
-    fit_cjk_glyphs(font)
-    removeOverlaps(font)
-    font.save(path)
-    return path
+    if not path.exists():
+        print(f"instantiate wenyuan {weight}")
+        font = TTFont(WENYUAN_SUBSET)
+        instancer.instantiateVariableFont(
+            font, {"wght": weight, "ital": 0}, inplace=True, optimize=False
+        )
+        scale_upem(font, UPEM)
+        decompose_composites(font)
+        hmtx = font["hmtx"]
+        for name in font.getGlyphOrder():
+            hmtx[name] = (CJK_ADVANCE, 0)
+        shift_x = (CJK_ADVANCE - UPEM * CJK_SCALE) / 2
+        transform_glyphs(font, ((CJK_SCALE, 0), (0, CJK_SCALE), (shift_x, 0)))
+        removeOverlaps(font)
+        font.save(path)
+    return TTFont(path)
 
 
 def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
@@ -191,9 +186,8 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
 
 
 def strip_hinting(font: TTFont) -> None:
-    for tag in ("cvt ", "fpgm", "prep", "gasp", "hdmx", "LTSH", "VDMX"):
-        if tag in font:
-            del font[tag]
+    for tag in ("cvt ", "fpgm", "prep", "hdmx"):
+        del font[tag]
     glyf = font["glyf"]
     for name in font.getGlyphOrder():
         glyf[name].removeHinting()
@@ -201,9 +195,18 @@ def strip_hinting(font: TTFont) -> None:
     font["head"].flags &= ~0b11100
 
 
+def set_line_height(font: TTFont) -> None:
+    hhea = font["hhea"]
+    pad = math.ceil((LINE_HEIGHT * UPEM - (hhea.ascent - hhea.descent)) / 2)
+    ascent, descent = hhea.ascent + pad, hhea.descent - pad
+    hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
+    os2 = font["OS/2"]
+    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ascent, descent, 0
+    os2.usWinAscent, os2.usWinDescent = ascent, -descent
+
+
 def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
     name = font["name"]
-    name.removeNames(platformID=1)
     values = {
         0: f"{name.getDebugName(0)} {cjk_copyright}",
         1: FAMILY,
@@ -213,18 +216,19 @@ def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
         5: f"Version {VERSION}",
         6: style.postscript_name,
     }
-    for record in name.names:
-        if record.nameID in values:
-            record.string = values[record.nameID]
+    name.names = []
+    for name_id, value in values.items():
+        name.setName(value, name_id, 3, 1, 0x409)
     font["head"].fontRevision = float(VERSION)
 
 
 def build(style: Style) -> Path:
-    latin = TTFont(style.meslo_path)
-    cjk = TTFont(cjk_upright(style.weight))
+    latin = load_menlo(style)
+    cjk = cjk_upright(style.weight)
     if style.italic:
         skew_glyphs(cjk)
     merge_cjk(latin, cjk)
+    set_line_height(latin)
     strip_hinting(latin)
     rename(latin, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
