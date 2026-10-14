@@ -10,7 +10,6 @@ from pathlib import Path
 
 from fontTools import subset
 from fontTools.misc.transform import Transform
-from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
@@ -39,10 +38,10 @@ CAP_HEIGHT = 1493
 X_HEIGHT = 1120
 CJK_ADVANCE = 2 * LATIN_ADVANCE
 CJK_SCALE = 0.95
-# The ink box of this glyph stands in for the CJK face; its vertical centre is aligned to the Latin cap centre.
+# The ink box of this glyph stands in for the CJK face, which is centred on CJK_CENTRE_Y.
 CJK_FACE_REFERENCE = ord("国")
+CJK_CENTRE_Y = CAP_HEIGHT / 2
 ITALIC_ANGLE = 11
-ITALIC_PIVOT_Y = CAP_HEIGHT / 2
 # Measured from Menlo Regular (400) to Bold (700): vertical "n" stems grow 107 units, the horizontal "H" bar 90.
 MENLO_STEM_GAIN_PER_WEIGHT = (107 / 300, 90 / 300)
 
@@ -115,11 +114,7 @@ def subset_wenyuan() -> None:
     print("subset wenyuan")
     font = TTFont(WENYUAN_VF)
     options = subset.Options()
-    options.layout_features = []
     options.drop_tables += ["BASE", "GDEF", "GPOS", "GSUB", "MVAR", "STAT", "VVAR", "vhea", "vmtx"]
-    options.notdef_outline = True
-    options.name_IDs = ["*"]
-    options.recalc_bounds = True
     subsetter = subset.Subsetter(options)
     subsetter.populate(unicodes=[cp for start, end in CJK_RANGES for cp in range(start, end + 1)])
     subsetter.subset(font)
@@ -178,17 +173,8 @@ def embolden(font: TTFont, weight_gain: int) -> None:
     )
 
 
-def decompose_composites(font: TTFont) -> None:
-    glyf = font["glyf"]
-    glyph_set = font.getGlyphSet()
-    for name in font.getGlyphOrder():
-        if glyf[name].isComposite():
-            pen = TTGlyphPen(glyph_set)
-            glyph_set[name].draw(pen)
-            glyf[name] = pen.glyph()
-
-
 def map_contours(font: TTFont, reshape: Callable) -> None:
+    """Reshape every simple glyph contour by contour, then refresh bounds and left side bearings, composites included."""
     glyf = font["glyf"]
     hmtx = font["hmtx"]
     names = font.getGlyphOrder()
@@ -212,7 +198,7 @@ def map_contours(font: TTFont, reshape: Callable) -> None:
 
 def skew_glyphs(font: TTFont) -> None:
     skew = math.tan(math.radians(ITALIC_ANGLE))
-    map_contours(font, Transform(1, 0, skew, 1, -skew * ITALIC_PIVOT_Y, 0).transformPoints)
+    map_contours(font, Transform(1, 0, skew, 1, -skew * CJK_CENTRE_Y, 0).transformPoints)
 
 
 def cjk_upright(weight: int) -> TTFont:
@@ -220,11 +206,8 @@ def cjk_upright(weight: int) -> TTFont:
     if not path.exists():
         print(f"instantiate wenyuan {weight}")
         font = TTFont(WENYUAN_SUBSET)
-        instancer.instantiateVariableFont(
-            font, {"wght": weight, "ital": 0}, inplace=True, optimize=False
-        )
+        instancer.instantiateVariableFont(font, {"wght": weight, "ital": 0}, inplace=True)
         scale_upem(font, UPEM)
-        decompose_composites(font)
         hmtx = font["hmtx"]
         for name in font.getGlyphOrder():
             hmtx[name] = (CJK_ADVANCE, 0)
@@ -232,7 +215,7 @@ def cjk_upright(weight: int) -> TTFont:
         reference = glyf[font.getBestCmap()[CJK_FACE_REFERENCE]]
         reference.recalcBounds(glyf)
         shift_x = (CJK_ADVANCE - UPEM * CJK_SCALE) / 2
-        shift_y = CAP_HEIGHT / 2 - (reference.yMin + reference.yMax) / 2 * CJK_SCALE
+        shift_y = CJK_CENTRE_Y - (reference.yMin + reference.yMax) / 2 * CJK_SCALE
         map_contours(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y).transformPoints)
         removeOverlaps(font)
         font.save(path)
@@ -241,22 +224,22 @@ def cjk_upright(weight: int) -> TTFont:
 
 def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
     latin_cmap = latin.getBestCmap()
-    new_codepoints = {cp: g for cp, g in cjk.getBestCmap().items() if cp not in latin_cmap}
-    renamed = {g: f"cjk{i:05d}" for i, g in enumerate(sorted(set(new_codepoints.values())))}
-
+    added = {}
+    renamed = {}
+    for codepoint, glyph in sorted(cjk.getBestCmap().items()):
+        if codepoint not in latin_cmap:
+            added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
     for old, new in renamed.items():
         latin["glyf"][new] = cjk["glyf"][old]
         latin["hmtx"][new] = cjk["hmtx"][old]
     latin.setGlyphOrder(glyph_order)
-    latin["maxp"].numGlyphs = len(glyph_order)
     for table in latin["cmap"].tables:
         if table.isUnicode():
-            table.cmap.update({cp: renamed[g] for cp, g in new_codepoints.items()})
+            table.cmap.update(added)
 
     ascent, descent = cjk["hhea"].ascent, cjk["hhea"].descent
     hhea, os2 = latin["hhea"], latin["OS/2"]
-    hhea.recalc(latin)
     hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
     os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ascent, descent, 0
     os2.usWinAscent, os2.usWinDescent = ascent, -descent
