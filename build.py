@@ -37,7 +37,6 @@ UPEM = 2048
 LATIN_ADVANCE = 1233
 CAP_HEIGHT = 1493
 X_HEIGHT = 1120
-LINE_HEIGHT = 1.4
 CJK_ADVANCE = 2 * LATIN_ADVANCE
 CJK_SCALE = 0.95
 ITALIC_ANGLE = 11
@@ -249,9 +248,14 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
         if table.isUnicode():
             table.cmap.update({cp: renamed[g] for cp, g in new_codepoints.items()})
 
-    latin["hhea"].recalc(latin)
-    latin["OS/2"].recalcUnicodeRanges(latin)
-    latin["OS/2"].recalcCodePageRanges(latin)
+    ascent, descent = cjk["hhea"].ascent, cjk["hhea"].descent
+    hhea, os2 = latin["hhea"], latin["OS/2"]
+    hhea.recalc(latin)
+    hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
+    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ascent, descent, 0
+    os2.usWinAscent, os2.usWinDescent = ascent, -descent
+    os2.recalcUnicodeRanges(latin)
+    os2.recalcCodePageRanges(latin)
 
 
 def strip_hinting(font: TTFont) -> None:
@@ -262,16 +266,6 @@ def strip_hinting(font: TTFont) -> None:
         glyf[name].removeHinting()
     # head flags 2-4 describe how instructions affect scaling and advances.
     font["head"].flags &= ~0b11100
-
-
-def set_line_height(font: TTFont) -> None:
-    hhea = font["hhea"]
-    pad = math.ceil((LINE_HEIGHT * UPEM - (hhea.ascent - hhea.descent)) / 2)
-    ascent, descent = hhea.ascent + pad, hhea.descent - pad
-    hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
-    os2 = font["OS/2"]
-    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ascent, descent, 0
-    os2.usWinAscent, os2.usWinDescent = ascent, -descent
 
 
 def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
@@ -299,7 +293,6 @@ def build(style: Style) -> Path:
     if style.italic:
         skew_glyphs(cjk)
     merge_cjk(latin, cjk)
-    set_line_height(latin)
     strip_hinting(latin)
     rename(latin, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
