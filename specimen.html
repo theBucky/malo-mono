@@ -2,72 +2,46 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Malo specimen</title>
 <style>
   @font-face { font-family: Malo; src: url(fonts/Malo-Regular.ttf); font-weight: 400; font-style: normal; }
   @font-face { font-family: Malo; src: url(fonts/Malo-Italic.ttf); font-weight: 400; font-style: italic; }
   @font-face { font-family: Malo; src: url(fonts/Malo-Bold.ttf); font-weight: 700; font-style: normal; }
   @font-face { font-family: Malo; src: url(fonts/Malo-BoldItalic.ttf); font-weight: 700; font-style: italic; }
+  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Regular.ttf); font-weight: 400; font-style: normal; }
+  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Italic.ttf); font-weight: 400; font-style: italic; }
+  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Bold.ttf); font-weight: 700; font-style: normal; }
+  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-BoldItalic.ttf); font-weight: 700; font-style: italic; }
 
-  :root { color-scheme: light dark; }
-  body { font-family: Malo, monospace; font-size: 18px; line-height: 1.6; max-width: 72ch; margin: 3rem auto; padding: 0 1rem; }
-  h1 { font-size: 2.5rem; margin: 0 0 2rem; }
-  h2 { font-size: 1rem; opacity: .55; font-weight: 400; margin: 2.5rem 0 .5rem; }
-  pre { font: inherit; margin: 0; }
-  .grid { background: repeating-linear-gradient(90deg, rgba(128, 128, 128, .25) 0 1px, transparent 1px 1ch); }
+  :root { color-scheme: light dark; --family: Malo; }
+  :root:has(#v2:target) { --family: "Malo V2"; }
+  pre { font-family: var(--family), monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  :root:not(:has(:target)) #v1, :target { color: inherit; text-decoration: none; font-weight: 700; outline: none; }
   .i { font-style: italic; }
   .b { font-weight: 700; }
-  .bi { font-weight: 700; font-style: italic; }
-  .menlo { font-family: Menlo, monospace; }
-  .big { font-size: 48px; line-height: 1.3; }
-  .size { position: fixed; top: 1rem; right: 1rem; font-size: 14px; }
-
-  /* one dark */
-  .code { background: #282c34; color: #abb2bf; border-radius: 8px; overflow: hidden; }
-  .code nav { background: #21252b; display: flex; }
-  .code input { display: none; }
-  .code label { padding: .4em 1.2em; font-size: .85em; color: #5c6370; cursor: pointer; border-top: 2px solid transparent; }
-  .code pre { display: none; padding: 1em 1.2em; white-space: pre-wrap; overflow-wrap: anywhere; }
-  #ts:checked ~ .ts, #rs:checked ~ .rs { display: block; }
-  #ts:checked ~ nav [for=ts], #rs:checked ~ nav [for=rs] { color: #abb2bf; background: #282c34; border-top-color: #528bff; }
-  .c { color: #5c6370; font-style: italic; }
-  .k { color: #c678dd; }
-  .s { color: #98c379; }
-  .n { color: #d19a66; }
-  .f { color: #61afef; }
-  .t { color: #e5c07b; }
-  .v { color: #e06c75; }
-  .o { color: #56b6c2; }
 </style>
 </head>
 <body>
-<label class="size">size <input type="range" min="10" max="64" value="18" oninput="document.body.style.fontSize = value + 'px'; size.value = value"> <output id="size">18</output></label>
+<pre>Subject: Malo specimen
+Family:  <a id="v1" href="#v1">Malo</a> | <a id="v2" href="#v2">Malo V2</a><span id="missing" hidden>
+Warning: fonts missing, run `uv run build.py`</span>
 
-<h1>Malo</h1>
-<p id="fontStatus" style="opacity: .55">fonts: loading</p>
+Malo    = Menlo      + 文渊黑体
+Malo V2 = Geist Mono + 文渊黑体
+
+每个汉字恰好占两个西文格，表格与代码混排时保持对齐。</pre>
 <script>
-  const faces = ["normal 400", "italic 400", "normal 700", "italic 700"];
-  Promise.all(faces.map(face => document.fonts.load(`${face} 1em Malo`)))
-    .then(loaded => fontStatus.textContent = `fonts: ${loaded.flat().length} of ${faces.length} loaded`)
-    .catch(() => fontStatus.textContent = "fonts: failed to load; run `uv run build.py` first");
+  Promise.all(["Malo", "Malo V2"].map(family => document.fonts.load(`1em '${family}'`)))
+    .catch(() => missing.hidden = false);
 </script>
-<p>Menlo 西文 + 文渊黑体中文，汉字占两格。</p>
-
-<h2>styles</h2>
+<hr>
 <pre>Regular      快速的棕色狐狸跳过懒狗 The quick brown fox
 <span class="i">Italic       快速的棕色狐狸跳过懒狗 The quick brown fox</span>
 <span class="b">Bold         快速的棕色狐狸跳过懒狗 The quick brown fox</span>
-<span class="bi">Bold Italic  快速的棕色狐狸跳过懒狗 The quick brown fox</span></pre>
-
-<h2>weight</h2>
-<pre><span class="menlo">Menlo 400  Hamburgefonstiv 0123456789 {}[]() -&gt; =&gt;</span>
-Malo 420   Hamburgefonstiv 0123456789 {}[]() -&gt; =&gt;
-<span class="b">Malo 700   Hamburgefonstiv 0123456789 {}[]() -&gt; =&gt;</span>
-<span class="menlo i">Menlo 400  Hamburgefonstiv 0123456789 {}[]() -&gt; =&gt;</span>
-<span class="i">Malo 420   Hamburgefonstiv 0123456789 {}[]() -&gt; =&gt;</span></pre>
-
-<h2>2:1 alignment</h2>
-<pre class="grid">|----------|------|--------|
+<span class="b i">Bold Italic  快速的棕色狐狸跳过懒狗 The quick brown fox</span></pre>
+<hr>
+<pre>|----------|------|--------|
 | 名称     | 类型 | 说明   |
 |----------|------|--------|
 | name     | str  | 字段名 |
@@ -78,63 +52,28 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaa
 「全角标点」，。！？；：（）【】《》“”‘’…—
 　全角空格　ｆｕｌｌｗｉｄｔｈ　１２３４５
 　ひらがな　カタカナ　ㄅㄆㄇㄈ　①②③④</pre>
+<hr>
+<pre>// 统计每个字符出现的次数
+type Counts = Map&lt;string, number&gt;;
 
-<h2>code</h2>
-<div class="code">
-<input type="radio" name="lang" id="ts" checked>
-<input type="radio" name="lang" id="rs">
-<nav><label for="ts">TypeScript</label><label for="rs">Rust</label></nav>
-<pre class="ts"><span class="c">// 统计每个字符出现的次数</span>
-<span class="k">type</span> <span class="t">Counts</span> = <span class="t">Map</span>&lt;<span class="t">string</span>, <span class="t">number</span>&gt;;
-
-<span class="k">export function</span> <span class="f">countChars</span>(text: <span class="t">string</span>): <span class="t">Counts</span> {
-  <span class="k">const</span> <span class="v">counts</span>: <span class="t">Counts</span> = <span class="k">new</span> <span class="t">Map</span>();
-  <span class="k">for</span> (<span class="k">const</span> <span class="v">char</span> <span class="k">of</span> text) {
-    counts.<span class="f">set</span>(char, (counts.<span class="f">get</span>(char) <span class="o">??</span> <span class="n">0</span>) <span class="o">+</span> <span class="n">1</span>);
+export function countChars(text: string): Counts {
+  const counts: Counts = new Map();
+  for (const char of text) {
+    counts.set(char, (counts.get(char) ?? 0) + 1);
   }
-  <span class="k">return</span> counts;
+  return counts;
 }
 
-<span class="c">// 这行注释故意写得很长：检查代码块的自动换行，以及中英混排 mixed text 折行之后是否还贴着网格 grid cells。</span>
-<span class="k">const</span> <span class="v">user</span> = { <span class="v">name</span>: <span class="s">"zhang san"</span>, <span class="v">age</span>: <span class="n">42</span>, <span class="v">tags</span>: [<span class="s">"admin"</span>, <span class="s">"ops"</span>] };
-<span class="k">if</span> (user.age <span class="o">&gt;=</span> <span class="n">18</span> <span class="o">&amp;&amp;</span> user.tags.<span class="f">includes</span>(<span class="s">"admin"</span>)) {
-  <span class="t">console</span>.<span class="f">log</span>(<span class="s">`welcome, <span class="v">${</span>user.name<span class="v">}</span>`</span>);  <span class="c">// 0O1lI iIl1 -&gt; =&gt;</span>
+// 这行注释故意写得很长：检查代码块的自动换行，以及中英混排 mixed text 折行之后是否还贴着网格 grid cells。
+const user = { name: "zhang san", age: 42, tags: ["admin", "ops"] };
+if (user.age &gt;= 18 &amp;&amp; user.tags.includes("admin")) {
+  console.log(`welcome, ${user.name}`);  // 0O1lI iIl1 -&gt; =&gt;
 }</pre>
-<pre class="rs"><span class="k">use</span> std::collections::<span class="t">HashMap</span>;
-
-<span class="c">/// 统计每个字符出现的次数</span>
-<span class="k">pub fn</span> <span class="f">count_chars</span>(text: <span class="o">&amp;</span><span class="t">str</span>) -&gt; <span class="t">HashMap</span>&lt;<span class="t">char</span>, <span class="t">usize</span>&gt; {
-    <span class="k">let mut</span> counts = <span class="t">HashMap</span>::<span class="f">new</span>();
-    <span class="k">for</span> ch <span class="k">in</span> text.<span class="f">chars</span>() {
-        <span class="o">*</span>counts.<span class="f">entry</span>(ch).<span class="f">or_insert</span>(<span class="n">0</span>) <span class="o">+=</span> <span class="n">1</span>;
-    }
-    counts
-}
-
-<span class="t">#[derive(Debug)]</span>
-<span class="k">struct</span> <span class="t">User</span>&lt;<span class="n">'a</span>&gt; { <span class="v">name</span>: <span class="o">&amp;</span><span class="n">'a</span> <span class="t">str</span>, <span class="v">age</span>: <span class="t">u8</span>, <span class="v">tags</span>: <span class="t">Vec</span>&lt;<span class="o">&amp;</span><span class="n">'a</span> <span class="t">str</span>&gt; }
-
-<span class="k">fn</span> <span class="f">main</span>() {
-    <span class="c">// 这行注释故意写得很长：检查代码块的自动换行，以及中英混排 mixed text 折行之后是否还贴着网格 grid cells。</span>
-    <span class="k">let</span> user = <span class="t">User</span> { name: <span class="s">"zhang san"</span>, age: <span class="n">42</span>, tags: <span class="f">vec!</span>[<span class="s">"admin"</span>, <span class="s">"ops"</span>] };
-    <span class="k">if</span> user.age <span class="o">&gt;=</span> <span class="n">18</span> <span class="o">&amp;&amp;</span> user.tags.<span class="f">contains</span>(<span class="o">&amp;</span><span class="s">"admin"</span>) {
-        <span class="f">println!</span>(<span class="s">"welcome, <span class="n">{}</span>"</span>, user.name);  <span class="c">// 0O1lI iIl1 -&gt; =&gt;</span>
-    }
-}</pre>
-</div>
-
-<pre>0O1lI| iIl1| {}[]()&lt;&gt; ~!@#$%^&amp;*_-+=;:'",.?/\ -&gt; =&gt; != == &lt;= &gt;= &lt;- ::</pre>
-
-<h2>characters</h2>
+<hr>
 <pre>ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
+0O1lI| iIl1| {}[]()&lt;&gt; ~!@#$%^&amp;*_-+=;:'",.?/\ -&gt; =&gt; != == &lt;= &gt;= &lt;- ::
 ÀÁÂÃÄÅÆÇÈÉÊË àáâãäåæçèéêë ìíîïĩīĭįı ßÐðÞþ ΑΒΓΔ αβγδ АБВГ абвг іїĳ
 天地玄黄 宇宙洪荒 日月盈昃 辰宿列张 寒来暑往 秋收冬藏
-闰余成岁 律吕调阳 云腾致雨 露结为霜 金生丽水 玉出昆冈
 劍外忽傳收薊北 初聞涕淚滿衣裳 卻看妻子愁何在 漫卷詩書喜欲狂</pre>
-
-<h2>large</h2>
-<pre class="big">永字八法 Hamburgefonstiv
-<span class="i">永字八法 Hamburgefonstiv</span>
-<span class="b">永字八法 Hamburgefonstiv</span></pre>
 </body>
 </html>
