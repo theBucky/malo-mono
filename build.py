@@ -36,11 +36,14 @@ VERSION = "0.1"
 UPEM = 2048
 LATIN_ADVANCE = 1233
 CAP_HEIGHT = 1493
+X_HEIGHT = 1120
 LINE_HEIGHT = 1.4
 CJK_ADVANCE = 2 * LATIN_ADVANCE
 CJK_SCALE = 0.95
 ITALIC_ANGLE = 11
 ITALIC_PIVOT_Y = CAP_HEIGHT / 2
+# Measured from Menlo Regular (400) to Bold (700): vertical "n" stems grow 107 units, the horizontal "H" bar 90.
+MENLO_STEM_GAIN_PER_WEIGHT = (107 / 300, 90 / 300)
 
 CJK_RANGES = (
     (0x2460, 0x24FF),
@@ -65,6 +68,7 @@ class Style:
     name: str
     weight: int
     italic: bool
+    latin_weight: int
 
     @property
     def menlo_name(self) -> str:
@@ -76,10 +80,10 @@ class Style:
 
 
 STYLES = (
-    Style("Regular", 400, False),
-    Style("Italic", 400, True),
-    Style("Bold", 700, False),
-    Style("Bold Italic", 700, True),
+    Style("Regular", 400, False, latin_weight=450),
+    Style("Italic", 400, True, latin_weight=450),
+    Style("Bold", 700, False, latin_weight=700),
+    Style("Bold Italic", 700, True, latin_weight=700),
 )
 
 
@@ -120,6 +124,57 @@ def subset_wenyuan() -> None:
     subsetter.subset(font)
     WENYUAN_SUBSET.parent.mkdir(parents=True, exist_ok=True)
     font.save(WENYUAN_SUBSET)
+
+
+def embolden_contour(points: list, strength: tuple) -> list:
+    """Port of FreeType FT_Outline_EmboldenXY for a clockwise TrueType contour, minus its rightward shift, so stems grow by `strength` and stay centred."""
+    half_x, half_y = strength[0] / 2, strength[1] / 2
+    count = len(points)
+
+    def neighbour(i: int, step: int) -> tuple | None:
+        others = (points[(i + step * k) % count] for k in range(1, count))
+        return next((point for point in others if point != points[i]), None)
+
+    result = []
+    for i, (x, y) in enumerate(points):
+        prev, after = neighbour(i, -1), neighbour(i, 1)
+        if prev is None:
+            result.append((x, y))
+            continue
+        len_in = math.hypot(x - prev[0], y - prev[1])
+        len_out = math.hypot(after[0] - x, after[1] - y)
+        in_x, in_y = (x - prev[0]) / len_in, (y - prev[1]) / len_in
+        out_x, out_y = (after[0] - x) / len_out, (after[1] - y) / len_out
+        d = in_x * out_x + in_y * out_y
+        if d <= -0.9375:
+            result.append((x, y))
+            continue
+        d += 1
+        normal_x, normal_y = -(in_y + out_y), in_x + out_x
+        q = out_y * in_x - out_x * in_y
+        limit = min(len_in, len_out)
+        shift_x = normal_x * (half_x / d if half_x * q <= limit * d else limit / q)
+        shift_y = normal_y * (half_y / d if half_y * q <= limit * d else limit / q)
+        result.append((x + shift_x, y + shift_y))
+    return result
+
+
+def embolden(font: TTFont, weight_gain: int) -> None:
+    """Thicken stems by `weight_gain` weight units; edges below the baseline or above the x-height move back so every alignment height stays put."""
+    strength = tuple(gain * weight_gain for gain in MENLO_STEM_GAIN_PER_WEIGHT)
+    half_y = strength[1] / 2
+    band_bottom, band_top = -half_y, X_HEIGHT + half_y
+
+    def pin(y: float) -> float:
+        if y <= band_bottom:
+            return y + half_y
+        if y >= band_top:
+            return y - half_y
+        return (y - band_bottom) * X_HEIGHT / (band_top - band_bottom)
+
+    map_contours(
+        font, lambda contour: [(x, pin(y)) for x, y in embolden_contour(contour, strength)]
+    )
 
 
 def decompose_composites(font: TTFont) -> None:
@@ -238,6 +293,8 @@ def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
 
 def build(style: Style) -> Path:
     latin = load_menlo(style)
+    if style.latin_weight != style.weight:
+        embolden(latin, style.latin_weight - style.weight)
     cjk = cjk_upright(style.weight)
     if style.italic:
         skew_glyphs(cjk)
