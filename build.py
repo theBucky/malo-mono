@@ -1,9 +1,11 @@
-"""Build Malo: Menlo Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo: Latin glyphs from Menlo (Malo) or Geist Mono (Malo V2) plus WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
+import io
 import math
 import shutil
 import urllib.request
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,25 +25,19 @@ OUTPUT = ROOT / "fonts"
 
 MENLO_SYSTEM = Path("/System/Library/Fonts/Menlo.ttc")
 MENLO_TTC = UPSTREAM / "Menlo.ttc"
+GEIST_URL = "https://github.com/vercel/geist-font/releases/download/v1.7.2/geist-font-v1.7.2.zip"
+GEIST_ZIP = UPSTREAM / "geist" / Path(GEIST_URL).name
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
 WENYUAN_VF = UPSTREAM / "wenyuan" / "WenYuanSansSCVF.ttf"
 WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 
-FAMILY = "Malo"
 VERSION = "0.1"
 
-UPEM = 2048
-LATIN_ADVANCE = 1233
-CAP_HEIGHT = 1493
-X_HEIGHT = 1120
-CJK_ADVANCE = 2 * LATIN_ADVANCE
 CJK_SCALE = 0.95
-# The ink box of this glyph stands in for the CJK face, which is centred on CJK_CENTRE_Y.
+# The ink box of this glyph stands in for the CJK face when centring.
 CJK_FACE_REFERENCE = ord("国")
-CJK_CENTRE_Y = CAP_HEIGHT / 2
-ITALIC_ANGLE = 11
 # Measured from Menlo Regular (400) to Bold (700): vertical "n" stems grow 107 units, the horizontal "H" bar 90.
 MENLO_STEM_GAIN_PER_WEIGHT = (107 / 300, 90 / 300)
 
@@ -71,12 +67,8 @@ class Style:
     latin_weight: int
 
     @property
-    def menlo_name(self) -> str:
-        return f"Menlo-{self.name.replace(' ', '')}"
-
-    @property
-    def postscript_name(self) -> str:
-        return f"{FAMILY}-{self.name.replace(' ', '')}"
+    def slug(self) -> str:
+        return self.name.replace(" ", "")
 
 
 STYLES = (
@@ -96,16 +88,27 @@ def download(url: str, dest: Path) -> None:
         shutil.copyfileobj(response, file)
 
 
-def ensure_sources() -> None:
+def load_menlo(style: Style) -> TTFont:
     if not MENLO_TTC.exists():
         MENLO_TTC.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(MENLO_SYSTEM, MENLO_TTC)
-    download(WENYUAN_URL, WENYUAN_VF)
-
-
-def load_menlo(style: Style) -> TTFont:
     fonts = TTCollection(MENLO_TTC).fonts
-    return next(font for font in fonts if font["name"].getDebugName(6) == style.menlo_name)
+    font = next(font for font in fonts if font["name"].getDebugName(6) == f"Menlo-{style.slug}")
+    if style.latin_weight != style.weight:
+        embolden(font, style.latin_weight - style.weight)
+    return font
+
+
+def load_geist_mono(style: Style) -> TTFont:
+    download(GEIST_URL, GEIST_ZIP)
+    member = f"GeistMono{'-Italic' if style.italic else ''}[wght].ttf"
+    with zipfile.ZipFile(GEIST_ZIP) as archive:
+        font = TTFont(io.BytesIO(archive.read(f"geist-font/GeistMono/variable/{member}")))
+    instancer.instantiateVariableFont(font, {"wght": style.latin_weight}, inplace=True)
+    return font
+
+
+FAMILIES = {"Malo": load_menlo, "Malo V2": load_geist_mono}
 
 
 def subset_wenyuan() -> None:
@@ -156,17 +159,18 @@ def embolden_contour(points: list, strength: tuple) -> list:
 
 
 def embolden(font: TTFont, weight_gain: int) -> None:
-    """Thicken stems by `weight_gain` weight units; edges below the baseline or above the x-height move back so every alignment height stays put."""
+    """Thicken Menlo stems by `weight_gain` weight units; edges below the baseline or above the x-height move back so every alignment height stays put."""
     strength = tuple(gain * weight_gain for gain in MENLO_STEM_GAIN_PER_WEIGHT)
     half_y = strength[1] / 2
-    band_bottom, band_top = -half_y, X_HEIGHT + half_y
+    x_height = font["OS/2"].sxHeight
+    band_bottom, band_top = -half_y, x_height + half_y
 
     def pin(y: float) -> float:
         if y <= band_bottom:
             return y + half_y
         if y >= band_top:
             return y - half_y
-        return (y - band_bottom) * X_HEIGHT / (band_top - band_bottom)
+        return (y - band_bottom) * x_height / (band_top - band_bottom)
 
     map_contours(
         font, lambda contour: [(x, pin(y)) for x, y in embolden_contour(contour, strength)]
@@ -196,39 +200,43 @@ def map_contours(font: TTFont, reshape: Callable) -> None:
             hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
-def skew_glyphs(font: TTFont) -> None:
-    skew = math.tan(math.radians(ITALIC_ANGLE))
-    map_contours(font, Transform(1, 0, skew, 1, -skew * CJK_CENTRE_Y, 0).transformPoints)
-
-
-def cjk_upright(weight: int) -> TTFont:
-    path = CACHE / f"wenyuan-{weight}.ttf"
+def cjk_glyphs(latin: TTFont, family: str, style: Style) -> TTFont:
+    """WenYuan scaled into double cells of `latin`, centred on half its cap height, and sheared to its italic angle."""
+    centre_y = latin["OS/2"].sCapHeight / 2
+    path = CACHE / f"wenyuan-{family.replace(' ', '')}-{style.weight}.ttf"
     if not path.exists():
-        print(f"instantiate wenyuan {weight}")
+        print(f"instantiate wenyuan {style.weight} for {family}")
+        upem = latin["head"].unitsPerEm
+        advance = 2 * latin["hmtx"]["space"][0]
         font = TTFont(WENYUAN_SUBSET)
-        instancer.instantiateVariableFont(font, {"wght": weight, "ital": 0}, inplace=True)
-        scale_upem(font, UPEM)
+        instancer.instantiateVariableFont(font, {"wght": style.weight, "ital": 0}, inplace=True)
+        scale_upem(font, upem)
         hmtx = font["hmtx"]
         for name in font.getGlyphOrder():
-            hmtx[name] = (CJK_ADVANCE, 0)
+            hmtx[name] = (advance, 0)
         glyf = font["glyf"]
         reference = glyf[font.getBestCmap()[CJK_FACE_REFERENCE]]
         reference.recalcBounds(glyf)
-        shift_x = (CJK_ADVANCE - UPEM * CJK_SCALE) / 2
-        shift_y = CJK_CENTRE_Y - (reference.yMin + reference.yMax) / 2 * CJK_SCALE
+        shift_x = (advance - upem * CJK_SCALE) / 2
+        shift_y = centre_y - (reference.yMin + reference.yMax) / 2 * CJK_SCALE
         map_contours(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y).transformPoints)
         removeOverlaps(font)
         font.save(path)
-    return TTFont(path)
+    font = TTFont(path)
+    if style.italic:
+        skew = math.tan(math.radians(-latin["post"].italicAngle))
+        map_contours(font, Transform(1, 0, skew, 1, -skew * centre_y, 0).transformPoints)
+    return font
 
 
 def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
-    latin_cmap = latin.getBestCmap()
+    """Map every CJK codepoint to the double-cell glyph, over any half-width glyph the Latin font had."""
+    taken = set(latin.getGlyphOrder())
     added = {}
     renamed = {}
     for codepoint, glyph in sorted(cjk.getBestCmap().items()):
-        if codepoint not in latin_cmap:
-            added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
+        name = f"uni{codepoint:04X}"
+        added[codepoint] = renamed.setdefault(glyph, name if name not in taken else f"{name}.cjk")
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
     for old, new in renamed.items():
         latin["glyf"][new] = cjk["glyf"][old]
@@ -249,7 +257,8 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
 
 def strip_hinting(font: TTFont) -> None:
     for tag in ("cvt ", "fpgm", "prep", "hdmx"):
-        del font[tag]
+        if tag in font:
+            del font[tag]
     glyf = font["glyf"]
     for name in font.getGlyphOrder():
         glyf[name].removeHinting()
@@ -257,52 +266,61 @@ def strip_hinting(font: TTFont) -> None:
     font["head"].flags &= ~0b11100
 
 
-def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
+def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
+    postscript_name = f"{family.replace(' ', '')}-{style.slug}"
     name = font["name"]
     values = {
         0: f"{name.getDebugName(0)} {cjk_copyright}",
-        1: FAMILY,
+        1: family,
         2: style.name,
-        3: f"{VERSION};{style.postscript_name}",
-        4: f"{FAMILY} {style.name}",
+        3: f"{VERSION};{postscript_name}",
+        4: f"{family} {style.name}",
         5: f"Version {VERSION}",
-        6: style.postscript_name,
+        6: postscript_name,
     }
-    name.names = []
+    name.names = [record for record in name.names if record.nameID in (13, 14)]
     for name_id, value in values.items():
         name.setName(value, name_id, 3, 1, 0x409)
     font["head"].fontRevision = float(VERSION)
 
+    bold, italic = style.weight >= 700, style.italic
+    os2 = font["OS/2"]
+    os2.usWeightClass = style.weight
+    os2.fsSelection = (
+        os2.fsSelection & ~0b1100001 | bold << 5 | italic | (not bold and not italic) << 6
+    )
+    font["head"].macStyle = bold | italic << 1
 
-def build(style: Style) -> Path:
-    latin = load_menlo(style)
-    if style.latin_weight != style.weight:
-        embolden(latin, style.latin_weight - style.weight)
-    cjk = cjk_upright(style.weight)
-    if style.italic:
-        skew_glyphs(cjk)
+
+def build(family: str, style: Style) -> Path:
+    latin = FAMILIES[family](style)
+    cjk = cjk_glyphs(latin, family, style)
     merge_cjk(latin, cjk)
     strip_hinting(latin)
-    rename(latin, style, cjk["name"].getDebugName(0))
+    rename(latin, family, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    output = OUTPUT / f"{style.postscript_name}.ttf"
+    output = OUTPUT / f"{latin['name'].getDebugName(6)}.ttf"
     latin.save(output)
     return output
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--family", action="append", choices=list(FAMILIES))
     parser.add_argument("--style", action="append", choices=[s.name for s in STYLES])
     parser.add_argument("--clean", action="store_true", help="drop cached intermediate fonts")
     args = parser.parse_args()
     if args.clean:
         shutil.rmtree(CACHE, ignore_errors=True)
-    ensure_sources()
+    download(WENYUAN_URL, WENYUAN_VF)
     subset_wenyuan()
-    for style in STYLES:
-        if args.style and style.name not in args.style:
+    for family in FAMILIES:
+        if args.family and family not in args.family:
             continue
-        print(f"built {build(style)}")
+        for style in STYLES:
+            if args.style and style.name not in args.style:
+                continue
+            print(f"built {build(family, style)}")
 
 
 if __name__ == "__main__":
