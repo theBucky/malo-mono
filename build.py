@@ -39,6 +39,8 @@ CAP_HEIGHT = 1493
 X_HEIGHT = 1120
 CJK_ADVANCE = 2 * LATIN_ADVANCE
 CJK_SCALE = 0.95
+# The ink box of this glyph stands in for the CJK face; its vertical centre is aligned to the Latin cap centre.
+CJK_FACE_REFERENCE = ord("国")
 ITALIC_ANGLE = 11
 ITALIC_PIVOT_Y = CAP_HEIGHT / 2
 # Measured from Menlo Regular (400) to Bold (700): vertical "n" stems grow 107 units, the horizontal "H" bar 90.
@@ -226,8 +228,12 @@ def cjk_upright(weight: int) -> TTFont:
         hmtx = font["hmtx"]
         for name in font.getGlyphOrder():
             hmtx[name] = (CJK_ADVANCE, 0)
+        glyf = font["glyf"]
+        reference = glyf[font.getBestCmap()[CJK_FACE_REFERENCE]]
+        reference.recalcBounds(glyf)
         shift_x = (CJK_ADVANCE - UPEM * CJK_SCALE) / 2
-        map_contours(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, 0).transformPoints)
+        shift_y = CAP_HEIGHT / 2 - (reference.yMin + reference.yMax) / 2 * CJK_SCALE
+        map_contours(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y).transformPoints)
         removeOverlaps(font)
         font.save(path)
     return TTFont(path)
