@@ -80,8 +80,8 @@ class Style:
 
 
 STYLES = (
-    Style("Regular", 400, False, latin_weight=450),
-    Style("Italic", 400, True, latin_weight=450),
+    Style("Regular", 400, False, latin_weight=420),
+    Style("Italic", 400, True, latin_weight=420),
     Style("Bold", 700, False, latin_weight=700),
     Style("Bold Italic", 700, True, latin_weight=700),
 )
