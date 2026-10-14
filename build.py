@@ -4,14 +4,17 @@ import argparse
 import math
 import shutil
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from fontTools import subset
+from fontTools.misc.transform import Transform
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
+from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 from fontTools.varLib import instancer
 
 ROOT = Path(__file__).parent
@@ -129,20 +132,31 @@ def decompose_composites(font: TTFont) -> None:
             glyf[name] = pen.glyph()
 
 
-def transform_glyphs(font: TTFont, matrix: tuple) -> None:
+def map_contours(font: TTFont, reshape: Callable) -> None:
     glyf = font["glyf"]
     hmtx = font["hmtx"]
-    for name in font.getGlyphOrder():
+    names = font.getGlyphOrder()
+    for name in names:
         glyph = glyf[name]
         if glyph.numberOfContours > 0:
-            glyph.coordinates.transform(matrix)
+            starts = [0, *(end + 1 for end in glyph.endPtsOfContours[:-1])]
+            glyph.coordinates = GlyphCoordinates(
+                [
+                    (round(x), round(y))
+                    for start, end in zip(starts, glyph.endPtsOfContours)
+                    for x, y in reshape(list(glyph.coordinates[start : end + 1]))
+                ]
+            )
+    for name in names:
+        glyph = glyf[name]
+        if glyph.numberOfContours:
             glyph.recalcBounds(glyf)
             hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
 def skew_glyphs(font: TTFont) -> None:
     skew = math.tan(math.radians(ITALIC_ANGLE))
-    transform_glyphs(font, ((1, 0), (skew, 1), (-skew * ITALIC_PIVOT_Y, 0)))
+    map_contours(font, Transform(1, 0, skew, 1, -skew * ITALIC_PIVOT_Y, 0).transformPoints)
 
 
 def cjk_upright(weight: int) -> TTFont:
@@ -159,7 +173,7 @@ def cjk_upright(weight: int) -> TTFont:
         for name in font.getGlyphOrder():
             hmtx[name] = (CJK_ADVANCE, 0)
         shift_x = (CJK_ADVANCE - UPEM * CJK_SCALE) / 2
-        transform_glyphs(font, ((CJK_SCALE, 0), (0, CJK_SCALE), (shift_x, 0)))
+        map_contours(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, 0).transformPoints)
         removeOverlaps(font)
         font.save(path)
     return TTFont(path)
