@@ -16,9 +16,9 @@ The first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads Wen
 ## How the build works
 
 1. Subset the WenYuan variable font to the CJK ranges and drop the layout tables.
-2. Instantiate Regular (400) and Bold (700). Scale each instance to the Menlo upem at 92%, centre each glyph in a double cell, with the ink box of 国 centred on the midline of the Latin capitals, and remove overlaps. Cache the result per weight.
+2. Instantiate Regular (400) and Bold (700). Scale each instance to the Menlo upem at 94%, centre each glyph in a double cell, with the ink box of 国 centred on the midline of the Latin capitals, and remove overlaps. Cache the result per weight.
 3. For italic styles, shear the CJK glyphs around the same midline to the Menlo italic angle.
-4. Map every CJK codepoint to the WenYuan glyph, over any half-width glyph Menlo had, set the line height to 1.4 em centred on the same midline, strip all TrueType hinting, and rename the family. Menlo outlines and weights stay as they ship.
+4. Map every CJK codepoint to the WenYuan glyph, over any half-width glyph Menlo had, set the line height to 1.3 em centred on the same midline, strip all TrueType hinting, and rename the family. Menlo outlines and weights stay as they ship.
 
 Upem, cell width, the capital midline and italic angle come from Menlo. To adjust CJK size or line height, change `CJK_SCALE` or `LINE_HEIGHT` in `build.py`, then rebuild with `--clean`.
 
