@@ -9,31 +9,22 @@
   @font-face { font-family: Malo; src: url(fonts/Malo-Italic.ttf); font-weight: 400; font-style: italic; }
   @font-face { font-family: Malo; src: url(fonts/Malo-Bold.ttf); font-weight: 700; font-style: normal; }
   @font-face { font-family: Malo; src: url(fonts/Malo-BoldItalic.ttf); font-weight: 700; font-style: italic; }
-  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Regular.ttf); font-weight: 400; font-style: normal; }
-  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Italic.ttf); font-weight: 400; font-style: italic; }
-  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-Bold.ttf); font-weight: 700; font-style: normal; }
-  @font-face { font-family: "Malo V2"; src: url(fonts/MaloV2-BoldItalic.ttf); font-weight: 700; font-style: italic; }
 
-  :root { color-scheme: light dark; --family: Malo; }
-  :root:has(#v2:target) { --family: "Malo V2"; }
-  pre { font-family: var(--family), monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-  :root:not(:has(:target)) #v1, :target { color: inherit; text-decoration: none; font-weight: 700; outline: none; }
+  :root { color-scheme: light dark; }
+  pre { font-family: Malo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   .i { font-style: italic; }
   .b { font-weight: 700; }
 </style>
 </head>
 <body>
-<pre>Subject: Malo specimen
-Family:  <a id="v1" href="#v1">Malo</a> | <a id="v2" href="#v2">Malo V2</a><span id="missing" hidden>
+<pre>Subject: Malo specimen<span id="missing" hidden>
 Warning: fonts missing, run `uv run build.py`</span>
 
-Malo    = Menlo      + 文渊黑体
-Malo V2 = Geist Mono + 文渊黑体
+Malo = Menlo + 文渊黑体
 
 每个汉字恰好占两个西文格，表格与代码混排时保持对齐。</pre>
 <script>
-  Promise.all(["Malo", "Malo V2"].map(family => document.fonts.load(`1em '${family}'`)))
-    .catch(() => missing.hidden = false);
+  document.fonts.load("1em Malo").catch(() => missing.hidden = false);
 </script>
 <hr>
 <pre>Regular      快速的棕色狐狸跳过懒狗 The quick brown fox
