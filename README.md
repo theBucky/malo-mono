@@ -1,27 +1,30 @@
-# Malo
+# malo
 
-Malo is a personal monospace font family. Latin glyphs come from Menlo, the monospace font bundled with macOS, and CJK glyphs come from [WenYuan Sans SC](https://github.com/takushun-wu/WenYuanFonts). Each CJK glyph fills exactly two Latin cells, so mixed text and Markdown tables stay aligned.
+malo is a monospace font for mixed chinese and english text. latin glyphs come from menlo, the monospace font that ships with macos. cjk glyphs come from [wenyuan sans sc](https://github.com/takushun-wu/WenYuanFonts). every cjk glyph is exactly two latin cells wide, so code and markdown tables stay aligned.
 
-## Build
+malo alt is the same font with latin glyphs from [hack](https://github.com/source-foundry/Hack) instead of menlo, plus the slashed zero from [alt-hack](https://github.com/source-foundry/alt-hack).
+
+## build
 
 ```sh
 uv sync
-uv run build.py            # all four styles, into fonts/
-uv run build.py --style Regular
-uv run build.py --clean    # rebuild cached intermediates under build/
+uv run build.py                  # malo, all four styles, into fonts/
+uv run build.py --alt            # malo alt
+uv run build.py --style Regular  # one style only
+uv run build.py --clean          # drop the cache in build/ first
 ```
 
-The first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads WenYuan into `sources/upstream/`. Open `specimen.html` in a browser to preview the result.
+the first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads wenyuan into `sources/upstream/`. `--alt` also downloads hack and the alt-hack zero. open `specimen.html` in a browser to see both fonts.
 
-## How the build works
+## how the build works
 
-1. Subset the WenYuan variable font to the CJK ranges and drop the layout tables.
-2. Instantiate Regular (400) and Bold (700). Scale each instance to the Menlo upem at 94%, centre each glyph in a double cell, with the ink box of 国 centred on the midline of the Latin capitals, and remove overlaps. Cache the result per weight.
-3. For italic styles, shear the CJK glyphs around the same midline to the Menlo italic angle.
-4. Map every CJK codepoint to the WenYuan glyph, over any half-width glyph Menlo had, set the line height to 1.3 em centred on the same midline, strip all TrueType hinting, and rename the family. Menlo outlines and weights stay as they ship.
+1. cut wenyuan down to the cjk ranges.
+2. make a regular (400) and a bold (700) copy. scale the glyphs to 94% of the latin em, put each one in a double cell, and line up the middle of 国 with the middle of the latin capitals. the result is cached in `build/`.
+3. for italics, slant the cjk glyphs to the latin italic angle.
+4. add the cjk glyphs to the latin font, set the line height to 1.3 em around the same middle, remove hinting, and rename the font.
 
-Upem, cell width, the capital midline and italic angle come from Menlo. To adjust CJK size or line height, change `CJK_SCALE` or `LINE_HEIGHT` in `build.py`, then rebuild with `--clean`.
+latin glyphs stay as they ship, except the zero in malo alt. the em size, cell width, the capital middle and the italic angle all come from the latin font. to change cjk size or line height, edit `CJK_SCALE` or `LINE_HEIGHT` in `build.py` and rebuild with `--clean`.
 
-## Licenses
+## licenses
 
-Menlo is an Apple font licensed with macOS and is not redistributable on its own. WenYuan Sans uses the SIL Open Font License 1.1 with reserved font names, so this build uses a different family name.
+menlo comes with macos and can't be shared alone. hack and alt-hack are mit licensed, and hack's older glyphs fall under the bitstream vera license. wenyuan sans uses the sil open font license 1.1 with reserved font names, which is why this font uses a different name.

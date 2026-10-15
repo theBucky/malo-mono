@@ -1,18 +1,24 @@
-"""Build Malo: Menlo Latin glyphs plus WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo from Menlo, or Malo Alt from Hack, with WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
+import io
 import math
 import shutil
 import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from fontTools import subset
 from fontTools.misc.transform import Transform
+from fontTools.pens.cu2quPen import Cu2QuPointPen
+from fontTools.pens.ttGlyphPen import TTGlyphPointPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from fontTools.ufoLib.glifLib import readGlyphFromString
 from fontTools.varLib import instancer
 
 ROOT = Path(__file__).parent
@@ -22,19 +28,24 @@ OUTPUT = ROOT / "fonts"
 
 MENLO_SYSTEM = Path("/System/Library/Fonts/Menlo.ttc")
 MENLO_TTC = UPSTREAM / "Menlo.ttc"
+HACK_URL = "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip"
+HACK_ZIP = UPSTREAM / "hack" / Path(HACK_URL).name
+ALT_HACK_ZERO_URL = (
+    "https://raw.githubusercontent.com/source-foundry/alt-hack/"
+    "9fab7328cfc208046cb7f3d713ec97a724d8219a/glyphs/u0030-forwardslash/{style}/zero.glif"
+)
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
 WENYUAN_VF = UPSTREAM / "wenyuan" / "WenYuanSansSCVF.ttf"
 WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 
-FAMILY = "Malo"
 VERSION = "0.1"
 
 CJK_SCALE = 0.94
 LINE_HEIGHT = 1.3
 CJK_FACE_REFERENCE = ord("国")
-LATIN_CAP_REFERENCE = "H"
+LATIN_CAP_REFERENCE = ord("H")
 
 CJK_RANGES = (
     (0x2460, 0x24FF),
@@ -73,21 +84,49 @@ STYLES = (
 )
 
 
+def fetch(url: str, dest: Path) -> None:
+    if dest.exists():
+        return
+    print(f"download {url}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(url, dest)
+
+
 def load_menlo(style: Style) -> TTFont:
-    if not MENLO_TTC.exists():
-        MENLO_TTC.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(MENLO_SYSTEM, MENLO_TTC)
+    fetch(MENLO_SYSTEM.as_uri(), MENLO_TTC)
     fonts = TTCollection(MENLO_TTC).fonts
     return next(font for font in fonts if font["name"].getDebugName(6) == f"Menlo-{style.slug}")
+
+
+def load_hack(style: Style) -> TTFont:
+    """Hack with the forward-slash zero from alt-hack."""
+    fetch(HACK_URL, HACK_ZIP)
+    with zipfile.ZipFile(HACK_ZIP) as archive:
+        font = TTFont(io.BytesIO(archive.read(f"ttf/Hack-{style.slug}.ttf")))
+    del font["DSIG"]
+    variant = style.slug.lower()
+    zero = UPSTREAM / "hack" / f"zero-{variant}.glif"
+    fetch(ALT_HACK_ZERO_URL.format(style=variant), zero)
+    replace_glyph(font, zero)
+    return font
+
+
+def replace_glyph(font: TTFont, glif: Path) -> None:
+    """Draw the UFO glyph in `glif` over the glyph its codepoint maps to, merging overlapping contours."""
+    pen = TTGlyphPointPen(None)
+    ufo_glyph = SimpleNamespace()
+    cu2qu = Cu2QuPointPen(pen, max_err=font["head"].unitsPerEm / 1000)
+    readGlyphFromString(glif.read_bytes(), ufo_glyph, cu2qu)
+    name = font.getBestCmap()[ufo_glyph.unicodes[0]]
+    font["glyf"][name] = pen.glyph()
+    font["hmtx"][name] = (ufo_glyph.width, 0)
+    removeOverlaps(font, [name])
 
 
 def subset_wenyuan() -> None:
     if WENYUAN_SUBSET.exists():
         return
-    if not WENYUAN_VF.exists():
-        print(f"download {WENYUAN_URL}")
-        WENYUAN_VF.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(WENYUAN_URL, WENYUAN_VF)
+    fetch(WENYUAN_URL, WENYUAN_VF)
     print("subset wenyuan")
     font = TTFont(WENYUAN_VF)
     options = subset.Options()
@@ -110,20 +149,20 @@ def transform_glyphs(font: TTFont, transform: Transform) -> None:
             hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
-def ink_midline(font: TTFont, glyph_name: str) -> float:
+def ink_midline(font: TTFont, codepoint: int) -> float:
     glyf = font["glyf"]
-    glyph = glyf[glyph_name]
+    glyph = glyf[font.getBestCmap()[codepoint]]
     glyph.recalcBounds(glyf)
     return (glyph.yMin + glyph.yMax) / 2
 
 
 def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
     """WenYuan scaled into double cells of `latin`, centred on `midline`, and sheared to its italic angle."""
-    path = CACHE / f"wenyuan-{style.weight}.ttf"
+    upem = latin["head"].unitsPerEm
+    advance = 2 * latin["hmtx"][latin.getBestCmap()[ord(" ")]][0]
+    path = CACHE / f"wenyuan-{style.weight}-{upem}-{advance}-{midline:g}.ttf"
     if not path.exists():
         print(f"instantiate wenyuan {style.weight}")
-        upem = latin["head"].unitsPerEm
-        advance = 2 * latin["hmtx"]["space"][0]
         font = TTFont(WENYUAN_SUBSET)
         instancer.instantiateVariableFont(font, {"wght": style.weight, "ital": 0}, inplace=True)
         scale_upem(font, upem)
@@ -131,7 +170,7 @@ def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
         for name in font.getGlyphOrder():
             hmtx[name] = (advance, 0)
         shift_x = (advance - upem * CJK_SCALE) / 2
-        shift_y = midline - ink_midline(font, font.getBestCmap()[CJK_FACE_REFERENCE]) * CJK_SCALE
+        shift_y = midline - ink_midline(font, CJK_FACE_REFERENCE) * CJK_SCALE
         transform_glyphs(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y))
         removeOverlaps(font)
         font.save(path)
@@ -143,7 +182,7 @@ def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
 
 
 def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
-    """Map every CJK codepoint to the double-cell glyph, over any half-width glyph Menlo had."""
+    """Map every CJK codepoint to the double-cell glyph, over any half-width Latin glyph."""
     added = {}
     renamed = {}
     for codepoint, glyph in sorted(cjk.getBestCmap().items()):
@@ -172,8 +211,9 @@ def set_line_height(font: TTFont, midline: float) -> None:
 
 
 def strip_hinting(font: TTFont) -> None:
-    for tag in ("cvt ", "fpgm", "prep", "hdmx"):
-        del font[tag]
+    for tag in ("cvt ", "fpgm", "prep", "hdmx", "gasp", "TTFA"):
+        if tag in font:
+            del font[tag]
     glyf = font["glyf"]
     for name in font.getGlyphOrder():
         glyf[name].removeHinting()
@@ -181,15 +221,15 @@ def strip_hinting(font: TTFont) -> None:
     font["head"].flags &= ~0b11100
 
 
-def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
-    postscript_name = f"{FAMILY}-{style.slug}"
+def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
+    postscript_name = f"{family.replace(' ', '')}-{style.slug}"
     name = font["name"]
     values = {
         0: f"{name.getDebugName(0)} {cjk_copyright}",
-        1: FAMILY,
+        1: family,
         2: style.name,
         3: f"{VERSION};{postscript_name}",
-        4: f"{FAMILY} {style.name}",
+        4: f"{family} {style.name}",
         5: f"Version {VERSION}",
         6: postscript_name,
     }
@@ -207,14 +247,13 @@ def rename(font: TTFont, style: Style, cjk_copyright: str) -> None:
     font["head"].macStyle = bold | italic << 1
 
 
-def build(style: Style) -> Path:
-    latin = load_menlo(style)
+def build(latin: TTFont, family: str, style: Style) -> Path:
     midline = ink_midline(latin, LATIN_CAP_REFERENCE)
     cjk = cjk_glyphs(latin, midline, style)
     merge_cjk(latin, cjk)
     set_line_height(latin, midline)
     strip_hinting(latin)
-    rename(latin, style, cjk["name"].getDebugName(0))
+    rename(latin, family, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
     output = OUTPUT / f"{latin['name'].getDebugName(6)}.ttf"
     latin.save(output)
@@ -224,15 +263,17 @@ def build(style: Style) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--style", action="append", choices=[s.name for s in STYLES])
+    parser.add_argument("--alt", action="store_true", help="build Malo Alt with Hack Latin glyphs")
     parser.add_argument("--clean", action="store_true", help="drop cached intermediate fonts")
     args = parser.parse_args()
     if args.clean:
         shutil.rmtree(CACHE, ignore_errors=True)
+    family, load_latin = ("Malo Alt", load_hack) if args.alt else ("Malo", load_menlo)
     subset_wenyuan()
     for style in STYLES:
         if args.style and style.name not in args.style:
             continue
-        print(f"built {build(style)}")
+        print(f"built {build(load_latin(style), family, style)}")
 
 
 if __name__ == "__main__":

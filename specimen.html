@@ -9,22 +9,31 @@
   @font-face { font-family: Malo; src: url(fonts/Malo-Italic.ttf); font-weight: 400; font-style: italic; }
   @font-face { font-family: Malo; src: url(fonts/Malo-Bold.ttf); font-weight: 700; font-style: normal; }
   @font-face { font-family: Malo; src: url(fonts/Malo-BoldItalic.ttf); font-weight: 700; font-style: italic; }
+  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Regular.ttf); font-weight: 400; font-style: normal; }
+  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Italic.ttf); font-weight: 400; font-style: italic; }
+  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Bold.ttf); font-weight: 700; font-style: normal; }
+  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-BoldItalic.ttf); font-weight: 700; font-style: italic; }
 
-  :root { color-scheme: light dark; }
-  pre { font-family: Malo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  :root { color-scheme: light dark; --family: Malo; }
+  :root:has(#alt:target) { --family: "Malo Alt"; }
+  pre { font-family: var(--family), monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  :root:not(:has(:target)) #malo, :target { color: inherit; text-decoration: none; font-weight: 700; outline: none; }
   .i { font-style: italic; }
   .b { font-weight: 700; }
 </style>
 </head>
 <body>
-<pre>Subject: Malo specimen<span id="missing" hidden>
-Warning: fonts missing, run `uv run build.py`</span>
+<pre>Subject: Malo specimen
+Family:  <a id="malo" href="#malo">Malo</a> | <a id="alt" href="#alt">Malo Alt</a><span id="missing" hidden>
+Warning: fonts missing, run `uv run build.py` and `uv run build.py --alt`</span>
 
-Malo = Menlo + 文渊黑体
+Malo     = Menlo + 文渊黑体
+Malo Alt = Hack  + 文渊黑体
 
 每个汉字恰好占两个西文格，表格与代码混排时保持对齐。</pre>
 <script>
-  document.fonts.load("1em Malo").catch(() => missing.hidden = false);
+  Promise.all(["Malo", "Malo Alt"].map(family => document.fonts.load(`1em '${family}'`)))
+    .catch(() => missing.hidden = false);
 </script>
 <hr>
 <pre>Regular      快速的棕色狐狸跳过懒狗 The quick brown fox
