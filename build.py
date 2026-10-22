@@ -1,24 +1,18 @@
-"""Build Malo from Menlo, or Malo Alt from Hack, with WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo from Menlo, or Malo Alt from Berkeley Mono, with WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
-import io
 import math
 import shutil
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 from fontTools import subset
 from fontTools.misc.transform import Transform
-from fontTools.pens.cu2quPen import Cu2QuPointPen
-from fontTools.pens.ttGlyphPen import TTGlyphPointPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
-from fontTools.ufoLib.glifLib import readGlyphFromString
 from fontTools.varLib import instancer
 
 ROOT = Path(__file__).parent
@@ -28,12 +22,7 @@ OUTPUT = ROOT / "fonts"
 
 MENLO_SYSTEM = Path("/System/Library/Fonts/Menlo.ttc")
 MENLO_TTC = UPSTREAM / "Menlo.ttc"
-HACK_URL = "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip"
-HACK_ZIP = UPSTREAM / "hack" / Path(HACK_URL).name
-ALT_HACK_ZERO_URL = (
-    "https://raw.githubusercontent.com/source-foundry/alt-hack/"
-    "9fab7328cfc208046cb7f3d713ec97a724d8219a/glyphs/u0030-forwardslash/{style}/zero.glif"
-)
+BERKELEY_MONO_OBLIQUE_ANGLE = 11
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
@@ -98,29 +87,18 @@ def load_menlo(style: Style) -> TTFont:
     return next(font for font in fonts if font["name"].getDebugName(6) == f"Menlo-{style.slug}")
 
 
-def load_hack(style: Style) -> TTFont:
-    """Hack with the forward-slash zero from alt-hack."""
-    fetch(HACK_URL, HACK_ZIP)
-    with zipfile.ZipFile(HACK_ZIP) as archive:
-        font = TTFont(io.BytesIO(archive.read(f"ttf/Hack-{style.slug}.ttf")))
-    del font["DSIG"]
-    variant = style.slug.lower()
-    zero = UPSTREAM / "hack" / f"zero-{variant}.glif"
-    fetch(ALT_HACK_ZERO_URL.format(style=variant), zero)
-    replace_glyph(font, zero)
+def load_berkeley_mono(style: Style) -> TTFont:
+    """Berkeley Mono from `sources/upstream/`, with its oblique angle set to the documented 11 degrees."""
+    variant = style.name.replace("Italic", "Oblique").replace(" ", "-")
+    font = TTFont(UPSTREAM / f"BerkeleyMono-{variant}.ttf")
+    if style.italic:
+        upem = font["head"].unitsPerEm
+        font["post"].italicAngle = -BERKELEY_MONO_OBLIQUE_ANGLE
+        font["hhea"].caretSlopeRise = upem
+        font["hhea"].caretSlopeRun = round(
+            math.tan(math.radians(BERKELEY_MONO_OBLIQUE_ANGLE)) * upem
+        )
     return font
-
-
-def replace_glyph(font: TTFont, glif: Path) -> None:
-    """Draw the UFO glyph in `glif` over the glyph its codepoint maps to, merging overlapping contours."""
-    pen = TTGlyphPointPen(None)
-    ufo_glyph = SimpleNamespace()
-    cu2qu = Cu2QuPointPen(pen, max_err=font["head"].unitsPerEm / 1000)
-    readGlyphFromString(glif.read_bytes(), ufo_glyph, cu2qu)
-    name = font.getBestCmap()[ufo_glyph.unicodes[0]]
-    font["glyf"][name] = pen.glyph()
-    font["hmtx"][name] = (ufo_glyph.width, 0)
-    removeOverlaps(font, [name])
 
 
 def subset_wenyuan() -> None:
@@ -211,7 +189,7 @@ def set_line_height(font: TTFont, midline: float) -> None:
 
 
 def strip_hinting(font: TTFont) -> None:
-    for tag in ("cvt ", "fpgm", "prep", "hdmx", "gasp", "TTFA"):
+    for tag in ("cvt ", "fpgm", "prep", "hdmx", "gasp"):
         if tag in font:
             del font[tag]
     glyf = font["glyf"]
@@ -263,12 +241,12 @@ def build(latin: TTFont, family: str, style: Style) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--style", action="append", choices=[s.name for s in STYLES])
-    parser.add_argument("--alt", action="store_true", help="build Malo Alt with Hack Latin glyphs")
+    parser.add_argument("--alt", action="store_true", help="build Malo Alt from Berkeley Mono")
     parser.add_argument("--clean", action="store_true", help="drop cached intermediate fonts")
     args = parser.parse_args()
     if args.clean:
         shutil.rmtree(CACHE, ignore_errors=True)
-    family, load_latin = ("Malo Alt", load_hack) if args.alt else ("Malo", load_menlo)
+    family, load_latin = ("Malo Alt", load_berkeley_mono) if args.alt else ("Malo", load_menlo)
     subset_wenyuan()
     for style in STYLES:
         if args.style and style.name not in args.style:
