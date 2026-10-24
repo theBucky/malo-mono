@@ -110,7 +110,16 @@ def subset_wenyuan() -> None:
     options = subset.Options()
     options.drop_tables += ["BASE", "GDEF", "GPOS", "GSUB", "MVAR", "STAT", "VVAR", "vhea", "vmtx"]
     subsetter = subset.Subsetter(options)
-    subsetter.populate(unicodes=[cp for start, end in CJK_RANGES for cp in range(start, end + 1)])
+    # half-width and combining forms do not fit a double cell, so leave them to fallback fonts.
+    cmap, hmtx, upem = font.getBestCmap(), font["hmtx"], font["head"].unitsPerEm
+    subsetter.populate(
+        unicodes=[
+            cp
+            for start, end in CJK_RANGES
+            for cp in range(start, end + 1)
+            if cp in cmap and hmtx[cmap[cp]][0] == upem
+        ]
+    )
     subsetter.subset(font)
     WENYUAN_SUBSET.parent.mkdir(parents=True, exist_ok=True)
     font.save(WENYUAN_SUBSET)

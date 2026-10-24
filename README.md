@@ -18,7 +18,7 @@ the first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads wen
 
 ## how the build works
 
-1. cut wenyuan down to the cjk ranges.
+1. cut wenyuan down to its full-width glyphs in the cjk ranges.
 2. make a regular (400) and a bold (700) copy. scale the glyphs to 94% of the latin em, put each one in a double cell, and line up the middle of 国 with the middle of the latin capitals. the result is cached in `build/`.
 3. for italics, slant the cjk glyphs to the latin italic angle. berkeley mono obliques use 11 degrees.
 4. add the cjk glyphs to the latin font, set the line height to 1.3 em around the same middle, and rename the font.
