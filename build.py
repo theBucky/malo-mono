@@ -166,6 +166,13 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
     for codepoint, glyph in sorted(cjk.getBestCmap().items()):
         added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
+    if "hdmx" in latin:
+        # read before inserting glyphs, which extends the glyph order hdmx decompiles against.
+        upem, hdmx = latin["head"].unitsPerEm, latin["hdmx"].hdmx
+        for ppem, widths in hdmx.items():
+            hdmx[ppem] = dict(widths) | {
+                new: round(cjk["hmtx"][old][0] * ppem / upem) for old, new in renamed.items()
+            }
     for old, new in renamed.items():
         latin["glyf"][new] = cjk["glyf"][old]
         latin["hmtx"][new] = cjk["hmtx"][old]
@@ -186,17 +193,6 @@ def set_line_height(font: TTFont, midline: float) -> None:
     hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
     os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ascent, descent, 0
     os2.usWinAscent, os2.usWinDescent = ascent, -descent
-
-
-def strip_hinting(font: TTFont) -> None:
-    for tag in ("cvt ", "fpgm", "prep", "hdmx", "gasp"):
-        if tag in font:
-            del font[tag]
-    glyf = font["glyf"]
-    for name in font.getGlyphOrder():
-        glyf[name].removeHinting()
-    # head flags 2-4 describe how instructions affect scaling and advances.
-    font["head"].flags &= ~0b11100
 
 
 def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
@@ -230,7 +226,6 @@ def build(latin: TTFont, family: str, style: Style) -> Path:
     cjk = cjk_glyphs(latin, midline, style)
     merge_cjk(latin, cjk)
     set_line_height(latin, midline)
-    strip_hinting(latin)
     rename(latin, family, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
     output = OUTPUT / f"{latin['name'].getDebugName(6)}.ttf"
