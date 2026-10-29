@@ -20,9 +20,8 @@ UPSTREAM = ROOT / "sources" / "upstream"
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
-MENLO_SYSTEM = Path("/System/Library/Fonts/Menlo.ttc")
+MENLO_URL = "file:///System/Library/Fonts/Menlo.ttc"
 MENLO_TTC = UPSTREAM / "Menlo.ttc"
-BERKELEY_MONO_OBLIQUE_ANGLE = 11
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
@@ -85,7 +84,7 @@ def fetch(url: str, dest: Path) -> None:
 
 
 def load_menlo(style: Style) -> TTFont:
-    fetch(MENLO_SYSTEM.as_uri(), MENLO_TTC)
+    fetch(MENLO_URL, MENLO_TTC)
     fonts = {font["name"].getDebugName(6): font for font in TTCollection(MENLO_TTC).fonts}
     font = fonts[f"Menlo-{style.slug}"]
     if style.weight >= 700:
@@ -102,17 +101,8 @@ def load_menlo(style: Style) -> TTFont:
 
 
 def load_berkeley_mono(style: Style) -> TTFont:
-    """Berkeley Mono from `sources/upstream/`, with its oblique angle set to the documented 11 degrees."""
     variant = style.name.replace("Italic", "Oblique").replace(" ", "-")
-    font = TTFont(UPSTREAM / f"BerkeleyMono-{variant}.ttf")
-    if style.italic:
-        upem = font["head"].unitsPerEm
-        font["post"].italicAngle = -BERKELEY_MONO_OBLIQUE_ANGLE
-        font["hhea"].caretSlopeRise = upem
-        font["hhea"].caretSlopeRun = round(
-            math.tan(math.radians(BERKELEY_MONO_OBLIQUE_ANGLE)) * upem
-        )
-    return font
+    return TTFont(UPSTREAM / f"BerkeleyMono-{variant}.ttf")
 
 
 def subset_wenyuan() -> None:
