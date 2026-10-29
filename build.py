@@ -33,6 +33,8 @@ VERSION = "0.1"
 
 CJK_SCALE = 0.94
 LINE_HEIGHT = 1.3
+# ghostty draws box drawing itself, with lines as thick as the underline.
+UNDERLINE_THICKNESS = 0.1
 CJK_FACE_REFERENCE = ord("国")
 LATIN_CAP_REFERENCE = ord("H")
 BOX_DRAWING = range(0x2500, 0x2580)
@@ -247,6 +249,7 @@ def build(latin: TTFont, family: str, style: Style) -> Path:
     cjk = cjk_glyphs(latin, midline, style)
     merge_glyphs(latin, cjk)
     set_line_height(latin, midline)
+    latin["post"].underlineThickness = round(UNDERLINE_THICKNESS * latin["head"].unitsPerEm)
     rename(latin, family, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)
     output = OUTPUT / f"{latin['name'].getDebugName(6)}.ttf"
