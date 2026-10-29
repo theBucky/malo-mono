@@ -35,6 +35,7 @@ CJK_SCALE = 0.94
 LINE_HEIGHT = 1.3
 CJK_FACE_REFERENCE = ord("国")
 LATIN_CAP_REFERENCE = ord("H")
+BOX_DRAWING = range(0x2500, 0x2580)
 
 CJK_RANGES = (
     (0x2460, 0x24FF),
@@ -83,8 +84,19 @@ def fetch(url: str, dest: Path) -> None:
 
 def load_menlo(style: Style) -> TTFont:
     fetch(MENLO_SYSTEM.as_uri(), MENLO_TTC)
-    fonts = TTCollection(MENLO_TTC).fonts
-    return next(font for font in fonts if font["name"].getDebugName(6) == f"Menlo-{style.slug}")
+    fonts = {font["name"].getDebugName(6): font for font in TTCollection(MENLO_TTC).fonts}
+    font = fonts[f"Menlo-{style.slug}"]
+    if style.weight >= 700:
+        # menlo bold has no box drawing, so take the upright regular glyphs as menlo italic does.
+        # their hinting calls into the regular font program, so drop it.
+        regular = fonts["Menlo-Regular"]
+        options = subset.Options(hinting=False)
+        options.drop_tables += ["feat", "meta", "morx"]
+        subsetter = subset.Subsetter(options)
+        subsetter.populate(unicodes=BOX_DRAWING)
+        subsetter.subset(regular)
+        merge_glyphs(font, regular)
+    return font
 
 
 def load_berkeley_mono(style: Style) -> TTFont:
@@ -168,11 +180,11 @@ def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
     return font
 
 
-def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
-    """Map every CJK codepoint to the double-cell glyph, over any half-width Latin glyph."""
+def merge_glyphs(latin: TTFont, source: TTFont) -> None:
+    """Map every codepoint of `source` to its glyph, over any glyph `latin` has for it."""
     added = {}
     renamed = {}
-    for codepoint, glyph in sorted(cjk.getBestCmap().items()):
+    for codepoint, glyph in sorted(source.getBestCmap().items()):
         added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
     if "hdmx" in latin:
@@ -180,11 +192,11 @@ def merge_cjk(latin: TTFont, cjk: TTFont) -> None:
         upem, hdmx = latin["head"].unitsPerEm, latin["hdmx"].hdmx
         for ppem, widths in hdmx.items():
             hdmx[ppem] = dict(widths) | {
-                new: round(cjk["hmtx"][old][0] * ppem / upem) for old, new in renamed.items()
+                new: round(source["hmtx"][old][0] * ppem / upem) for old, new in renamed.items()
             }
     for old, new in renamed.items():
-        latin["glyf"][new] = cjk["glyf"][old]
-        latin["hmtx"][new] = cjk["hmtx"][old]
+        latin["glyf"][new] = source["glyf"][old]
+        latin["hmtx"][new] = source["hmtx"][old]
     latin.setGlyphOrder(glyph_order)
     for table in latin["cmap"].tables:
         if table.isUnicode():
@@ -233,7 +245,7 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
 def build(latin: TTFont, family: str, style: Style) -> Path:
     midline = ink_midline(latin, LATIN_CAP_REFERENCE)
     cjk = cjk_glyphs(latin, midline, style)
-    merge_cjk(latin, cjk)
+    merge_glyphs(latin, cjk)
     set_line_height(latin, midline)
     rename(latin, family, style, cjk["name"].getDebugName(0))
     OUTPUT.mkdir(parents=True, exist_ok=True)

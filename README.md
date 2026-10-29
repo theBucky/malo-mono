@@ -23,7 +23,7 @@ the first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads wen
 3. for italics, slant the cjk glyphs to the latin italic angle. berkeley mono obliques use 11 degrees.
 4. add the cjk glyphs to the latin font, set the line height to 1.3 em around the same middle, and rename the font.
 
-latin glyphs stay as they ship. the em size, cell width, the capital middle and the italic angle all come from the latin font. to change cjk size or line height, edit `CJK_SCALE` or `LINE_HEIGHT` in `build.py` and rebuild with `--clean`.
+latin glyphs stay as they ship. menlo bold has no box drawing, so malo bold takes those glyphs from menlo regular, the same ones menlo italic uses. the em size, cell width, the capital middle and the italic angle all come from the latin font. to change cjk size or line height, edit `CJK_SCALE` or `LINE_HEIGHT` in `build.py` and rebuild with `--clean`.
 
 ## licenses
 
