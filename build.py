@@ -34,8 +34,6 @@ CJK_SCALE = 0.94
 LINE_HEIGHT = 1.3
 # ghostty draws box drawing itself, with lines as thick as the underline.
 UNDERLINE_THICKNESS = 0.1
-CJK_FACE_REFERENCE = ord("国")
-LATIN_CAP_REFERENCE = ord("H")
 BOX_DRAWING = range(0x2500, 0x2580)
 
 CJK_RANGES = (
@@ -144,13 +142,6 @@ def transform_glyphs(font: TTFont, transform: Transform) -> None:
             hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
-def ink_midline(font: TTFont, codepoint: int) -> float:
-    glyf = font["glyf"]
-    glyph = glyf[font.getBestCmap()[codepoint]]
-    glyph.recalcBounds(glyf)
-    return (glyph.yMin + glyph.yMax) / 2
-
-
 def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
     """WenYuan scaled into double cells of `latin`, centred on `midline`, and sheared to its italic angle."""
     upem = latin["head"].unitsPerEm
@@ -165,8 +156,10 @@ def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
         hmtx = font["hmtx"]
         for name in font.getGlyphOrder():
             hmtx[name] = (advance, 0)
+        # wenyuan's typo metrics span the ideographic em box, which centres its hanzi.
+        em_centre = (font["OS/2"].sTypoAscender + font["OS/2"].sTypoDescender) / 2
         shift_x = (advance - upem * CJK_SCALE) / 2
-        shift_y = midline - ink_midline(font, CJK_FACE_REFERENCE) * CJK_SCALE
+        shift_y = midline - em_centre * CJK_SCALE
         transform_glyphs(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y))
         removeOverlaps(font)
         font.save(path)
@@ -238,7 +231,8 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
 
 
 def build(latin: TTFont, family: str, style: Style) -> Path:
-    midline = ink_midline(latin, LATIN_CAP_REFERENCE)
+    cap = latin["glyf"][latin.getBestCmap()[ord("H")]]
+    midline = (cap.yMin + cap.yMax) / 2
     cjk = cjk_glyphs(latin, midline, style)
     merge_glyphs(latin, cjk)
     set_line_height(latin, midline)
