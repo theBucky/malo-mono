@@ -63,6 +63,10 @@ class Style:
     italic: bool
 
     @property
+    def bold(self) -> bool:
+        return self.weight >= 700
+
+    @property
     def slug(self) -> str:
         return self.name.replace(" ", "")
 
@@ -87,7 +91,7 @@ def load_menlo(style: Style) -> TTFont:
     fetch(MENLO_URL, MENLO_TTC)
     fonts = {font["name"].getDebugName(6): font for font in TTCollection(MENLO_TTC).fonts}
     font = fonts[f"Menlo-{style.slug}"]
-    if style.weight >= 700:
+    if style.bold:
         # menlo bold has no box drawing, so take the upright regular glyphs as menlo italic does.
         # their hinting calls into the regular font program, so drop it.
         regular = fonts["Menlo-Regular"]
@@ -153,6 +157,7 @@ def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
     advance = 2 * latin["hmtx"][latin.getBestCmap()[ord(" ")]][0]
     path = CACHE / f"wenyuan-{style.weight}-{upem}-{advance}-{midline:g}.ttf"
     if not path.exists():
+        subset_wenyuan()
         print(f"instantiate wenyuan {style.weight}")
         font = TTFont(WENYUAN_SUBSET)
         instancer.instantiateVariableFont(font, {"wght": style.weight, "ital": 0}, inplace=True)
@@ -225,13 +230,11 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
         name.setName(value, name_id, 3, 1, 0x409)
     font["head"].fontRevision = float(VERSION)
 
-    bold, italic = style.weight >= 700, style.italic
     os2 = font["OS/2"]
     os2.usWeightClass = style.weight
-    os2.fsSelection = (
-        os2.fsSelection & ~0b1100001 | bold << 5 | italic | (not bold and not italic) << 6
-    )
-    font["head"].macStyle = bold | italic << 1
+    regular = not (style.bold or style.italic)
+    os2.fsSelection = os2.fsSelection & ~0b1100001 | style.bold << 5 | style.italic | regular << 6
+    font["head"].macStyle = style.bold | style.italic << 1
 
 
 def build(latin: TTFont, family: str, style: Style) -> Path:
@@ -256,7 +259,6 @@ def main() -> None:
     if args.clean:
         shutil.rmtree(CACHE, ignore_errors=True)
     family, load_latin = ("Malo Alt", load_berkeley_mono) if args.alt else ("Malo", load_menlo)
-    subset_wenyuan()
     for style in STYLES:
         if args.style and style.name not in args.style:
             continue
