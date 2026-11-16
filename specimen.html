@@ -9,30 +9,37 @@
   @font-face { font-family: Malo; src: url(fonts/Malo-Italic.ttf); font-weight: 400; font-style: italic; }
   @font-face { font-family: Malo; src: url(fonts/Malo-Bold.ttf); font-weight: 700; font-style: normal; }
   @font-face { font-family: Malo; src: url(fonts/Malo-BoldItalic.ttf); font-weight: 700; font-style: italic; }
-  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Regular.ttf); font-weight: 400; font-style: normal; }
-  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Italic.ttf); font-weight: 400; font-style: italic; }
-  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-Bold.ttf); font-weight: 700; font-style: normal; }
-  @font-face { font-family: "Malo Alt"; src: url(fonts/MaloAlt-BoldItalic.ttf); font-weight: 700; font-style: italic; }
+  @font-face { font-family: Malokeley; src: url(fonts/Malokeley-Regular.ttf); font-weight: 400; font-style: normal; }
+  @font-face { font-family: Malokeley; src: url(fonts/Malokeley-Italic.ttf); font-weight: 400; font-style: italic; }
+  @font-face { font-family: Malokeley; src: url(fonts/Malokeley-Bold.ttf); font-weight: 700; font-style: normal; }
+  @font-face { font-family: Malokeley; src: url(fonts/Malokeley-BoldItalic.ttf); font-weight: 700; font-style: italic; }
+  @font-face { font-family: Maloist; src: url(fonts/Maloist-Regular.ttf); font-weight: 400; font-style: normal; }
+  @font-face { font-family: Maloist; src: url(fonts/Maloist-Italic.ttf); font-weight: 400; font-style: italic; }
+  @font-face { font-family: Maloist; src: url(fonts/Maloist-Bold.ttf); font-weight: 700; font-style: normal; }
+  @font-face { font-family: Maloist; src: url(fonts/Maloist-BoldItalic.ttf); font-weight: 700; font-style: italic; }
 
   :root { color-scheme: light dark; --family: Malo; }
-  :root:has(#alt:target) { --family: "Malo Alt"; }
+  :root:has(#malokeley:target) { --family: Malokeley; }
+  :root:has(#maloist:target) { --family: Maloist; }
   pre { font-family: var(--family), monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   :root:not(:has(:target)) #malo, :target { color: inherit; text-decoration: none; font-weight: 700; outline: none; }
   .i { font-style: italic; }
   .b { font-weight: 700; }
+  .u { text-decoration: underline from-font; text-underline-position: from-font; }
 </style>
 </head>
 <body>
 <pre>Subject: Malo specimen
-Family:  <a id="malo" href="#malo">Malo</a> | <a id="alt" href="#alt">Malo Alt</a><span id="missing" hidden>
-Warning: fonts missing, run `uv run build.py` and `uv run build.py --alt`</span>
+Family:  <a id="malo" href="#malo">Malo</a> | <a id="malokeley" href="#malokeley">Malokeley</a> | <a id="maloist" href="#maloist">Maloist</a><span id="missing" hidden>
+Warning: fonts missing, run `uv run build.py --family Malo|Malokeley|Maloist`</span>
 
-Malo     = Menlo         + 文渊黑体
-Malo Alt = Berkeley Mono + 文渊黑体
+Malo      = Menlo         + 文渊黑体
+Malokeley = Berkeley Mono + 文渊黑体
+Maloist   = Goeist Mono   + 文渊黑体
 
 每个汉字恰好占两个西文格，表格与代码混排时保持对齐。</pre>
 <script>
-  Promise.all(["Malo", "Malo Alt"].map(family => document.fonts.load(`1em '${family}'`)))
+  Promise.all(["Malo", "Malokeley", "Maloist"].map(family => document.fonts.load(`1em '${family}'`)))
     .catch(() => missing.hidden = false);
 </script>
 <hr>
@@ -52,6 +59,13 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaa
 「全角标点」，。！？；：（）【】《》“”‘’…—
 　全角空格　ｆｕｌｌｗｉｄｔｈ　１２３４５
 　ひらがな　カタカナ　ㄅㄆㄇㄈ　①②③④</pre>
+<hr>
+<pre>┌──────────┬──────┐
+│ 名称     │ 类型 │
+├──────────┼──────┤
+│ name     │ str  │
+└──────────┴──────┘
+<span class="u">ghostty 按下划线粗细绘制框线 underline</span></pre>
 <hr>
 <pre>// 统计每个字符出现的次数
 type Counts = Map&lt;string, number&gt;;

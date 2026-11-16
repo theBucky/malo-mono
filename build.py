@@ -1,9 +1,11 @@
-"""Build Malo from Menlo, or Malo Alt from Berkeley Mono, with WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build Malo, Malokeley or Maloist with WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
+import io
 import math
 import shutil
 import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +24,10 @@ OUTPUT = ROOT / "fonts"
 
 MENLO_URL = "file:///System/Library/Fonts/Menlo.ttc"
 MENLO_TTC = UPSTREAM / "Menlo.ttc"
+GOEIST_URL = (
+    "https://github.com/shadcn-labs/goeist-font/releases/download/v0.1.0/GoeistMono-v0.1.0.zip"
+)
+GOEIST_ZIP = UPSTREAM / "goeist" / "GoeistMono-v0.1.0.zip"
 WENYUAN_URL = (
     "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
 )
@@ -113,6 +119,32 @@ def load_berkeley_mono(style: Style) -> TTFont:
     return TTFont(UPSTREAM / f"BerkeleyMono-{variant}.ttf")
 
 
+def load_goeist_mono(style: Style) -> TTFont:
+    fetch(GOEIST_URL, GOEIST_ZIP)
+    with zipfile.ZipFile(GOEIST_ZIP) as archive:
+        font = TTFont(io.BytesIO(archive.read(f"GoeistMono/ttf/GoeistMono-{style.slug}.ttf")))
+    # ligatures, including the coding ligatures in ss11, draw several characters in one cell.
+    features = {
+        record.FeatureTag
+        for table in ("GSUB", "GPOS")
+        for record in font[table].table.FeatureList.FeatureRecord
+    }
+    options = subset.Options(
+        layout_features=sorted(features - {"calt", "dlig", "liga", "ss11"}),
+        name_IDs=["*"],
+        glyph_names=True,
+        notdef_outline=True,
+        passthrough_tables=True,
+    )
+    subsetter = subset.Subsetter(options)
+    subsetter.populate(unicodes=unicode_cmap(font))
+    subsetter.subset(font)
+    return font
+
+
+FAMILIES = {"Malo": load_menlo, "Malokeley": load_berkeley_mono, "Maloist": load_goeist_mono}
+
+
 def subset_wenyuan() -> None:
     if WENYUAN_SUBSET.exists():
         return
@@ -180,8 +212,10 @@ def merge_glyphs(latin: TTFont, source: TTFont) -> None:
     """Map every codepoint of `source` to its glyph, over any glyph `latin` has for it."""
     added = {}
     renamed = {}
+    taken = set(latin.getGlyphOrder())
     for codepoint, glyph in sorted(unicode_cmap(source).items()):
-        added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
+        name = f"uni{codepoint:04X}"
+        added[codepoint] = renamed.setdefault(glyph, f"{name}.cjk" if name in taken else name)
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
     if "hdmx" in latin:
         # read before inserting glyphs, which extends the glyph order hdmx decompiles against.
@@ -255,17 +289,20 @@ def build(latin: TTFont, family: str, style: Style) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--family", action="append", choices=FAMILIES)
     parser.add_argument("--style", action="append", choices=[s.name for s in STYLES])
-    parser.add_argument("--alt", action="store_true", help="build Malo Alt from Berkeley Mono")
-    parser.add_argument("--clean", action="store_true", help="drop cached intermediate fonts")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="drop cached intermediate fonts, as a run without filters does",
+    )
     args = parser.parse_args()
-    if args.clean:
+    if args.clean or not (args.family or args.style):
         shutil.rmtree(CACHE, ignore_errors=True)
-    family, load_latin = ("Malo Alt", load_berkeley_mono) if args.alt else ("Malo", load_menlo)
-    for style in STYLES:
-        if args.style and style.name not in args.style:
-            continue
-        print(f"built {build(load_latin(style), family, style)}")
+    for family in args.family or FAMILIES:
+        for style in STYLES:
+            if not args.style or style.name in args.style:
+                print(f"built {build(FAMILIES[family](style), family, style)}")
 
 
 if __name__ == "__main__":
