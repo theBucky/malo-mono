@@ -85,6 +85,12 @@ def fetch(url: str, dest: Path) -> None:
     urllib.request.urlretrieve(url, dest)
 
 
+def unicode_cmap(font: TTFont) -> dict[int, str]:
+    cmap = font.getBestCmap()
+    assert cmap is not None, "every source font maps unicode"
+    return cmap
+
+
 def load_menlo(style: Style) -> TTFont:
     fetch(MENLO_URL, MENLO_TTC)
     fonts = {font["name"].getDebugName(6): font for font in TTCollection(MENLO_TTC).fonts}
@@ -117,7 +123,7 @@ def subset_wenyuan() -> None:
     options.drop_tables += ["BASE", "GDEF", "GPOS", "GSUB", "MVAR", "STAT", "VVAR", "vhea", "vmtx"]
     subsetter = subset.Subsetter(options)
     # half-width and combining forms do not fit a double cell, so leave them to fallback fonts.
-    cmap, hmtx, upem = font.getBestCmap(), font["hmtx"], font["head"].unitsPerEm
+    cmap, hmtx, upem = unicode_cmap(font), font["hmtx"], font["head"].unitsPerEm
     subsetter.populate(
         unicodes=[
             cp
@@ -145,7 +151,7 @@ def transform_glyphs(font: TTFont, transform: Transform) -> None:
 def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
     """WenYuan scaled into double cells of `latin`, centred on `midline`, and sheared to its italic angle."""
     upem = latin["head"].unitsPerEm
-    advance = 2 * latin["hmtx"][latin.getBestCmap()[ord(" ")]][0]
+    advance = 2 * latin["hmtx"][unicode_cmap(latin)[ord(" ")]][0]
     path = CACHE / f"wenyuan-{style.weight}-{upem}-{advance}-{midline:g}.ttf"
     if not path.exists():
         subset_wenyuan()
@@ -174,7 +180,7 @@ def merge_glyphs(latin: TTFont, source: TTFont) -> None:
     """Map every codepoint of `source` to its glyph, over any glyph `latin` has for it."""
     added = {}
     renamed = {}
-    for codepoint, glyph in sorted(source.getBestCmap().items()):
+    for codepoint, glyph in sorted(unicode_cmap(source).items()):
         added[codepoint] = renamed.setdefault(glyph, f"uni{codepoint:04X}")
     glyph_order = latin.getGlyphOrder() + list(renamed.values())
     if "hdmx" in latin:
@@ -206,7 +212,7 @@ def set_line_height(font: TTFont, midline: float) -> None:
     os2.usWinAscent, os2.usWinDescent = ascent, -descent
 
 
-def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
+def rename(font: TTFont, family: str, style: Style, cjk_copyright: str | None) -> None:
     postscript_name = f"{family.replace(' ', '')}-{style.slug}"
     name = font["name"]
     values = {
@@ -234,7 +240,7 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
 
 
 def build(latin: TTFont, family: str, style: Style) -> Path:
-    cap = latin["glyf"][latin.getBestCmap()[ord("H")]]
+    cap = latin["glyf"][unicode_cmap(latin)[ord("H")]]
     midline = (cap.yMin + cap.yMax) / 2
     cjk = cjk_glyphs(latin, midline, style)
     merge_glyphs(latin, cjk)
