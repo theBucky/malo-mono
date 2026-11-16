@@ -218,7 +218,10 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str) -> None:
         5: f"Version {VERSION}",
         6: postscript_name,
     }
-    name.names = [record for record in name.names if record.nameID in (13, 14)]
+    # keep the license and the feature names that layout tables point to.
+    name.names = [
+        record for record in name.names if record.nameID in (13, 14) or record.nameID > 255
+    ]
     for name_id, value in values.items():
         name.setName(value, name_id, 3, 1, 0x409)
     font["head"].fontRevision = float(VERSION)
