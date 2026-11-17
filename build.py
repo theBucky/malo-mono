@@ -9,6 +9,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 from fontTools import subset
 from fontTools.misc.transform import Transform
@@ -25,16 +26,14 @@ UPSTREAM = ROOT / "sources" / "upstream"
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
-WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
-
 VERSION = "0.1"
 
 CJK_SCALE = 0.94
 LINE_HEIGHT = 1.3
 # ghostty draws box drawing itself, with lines as thick as the underline.
 UNDERLINE_THICKNESS = 0.1
-BOX_DRAWING = range(0x2500, 0x2580)
 
+BOX_DRAWING = range(0x2500, 0x2580)
 CJK_RANGES = (
     (0x2460, 0x24FF),
     (0x2E80, 0x2EFF),
@@ -74,6 +73,29 @@ STYLES = (
     Style("Bold", 700, False),
     Style("Bold Italic", 700, True),
 )
+
+
+@dataclass(frozen=True)
+class Grid:
+    """The measures of a latin font that cjk glyphs and line metrics follow."""
+
+    upem: int
+    cell: int
+    # the middle of the capitals.
+    midline: float
+    # the horizontal shift per unit of height, zero for upright fonts.
+    slant: float
+
+    @classmethod
+    def of(cls, latin: TTFont) -> Self:
+        cmap = unicode_cmap(latin)
+        cap = latin["glyf"][cmap[ord("H")]]
+        return cls(
+            upem=latin["head"].unitsPerEm,
+            cell=latin["hmtx"][cmap[ord(" ")]][0],
+            midline=(cap.yMin + cap.yMax) / 2,
+            slant=math.tan(math.radians(-latin["post"].italicAngle)),
+        )
 
 
 def fetch_release(repo: str, asset: str) -> Path:
@@ -162,9 +184,11 @@ FAMILIES = {
 }
 
 
-def subset_wenyuan() -> None:
-    if WENYUAN_SUBSET.exists():
-        return
+def wenyuan_subset() -> Path:
+    """WenYuan cut down to its full-width glyphs in `CJK_RANGES`."""
+    path = CACHE / "wenyuan-subset.ttf"
+    if path.exists():
+        return path
     font = TTFont(fetch_release("takushun-wu/WenYuanFonts", "WenYuanSansSCVF.ttf"))
     print("subset wenyuan")
     options = subset.Options()
@@ -181,7 +205,8 @@ def subset_wenyuan() -> None:
         ]
     )
     subsetter.subset(font)
-    font.save(WENYUAN_SUBSET)
+    font.save(path)
+    return path
 
 
 def transform_glyphs(font: TTFont, transform: Transform) -> None:
@@ -195,31 +220,28 @@ def transform_glyphs(font: TTFont, transform: Transform) -> None:
             hmtx[name] = (hmtx[name][0], glyph.xMin)
 
 
-def cjk_glyphs(latin: TTFont, midline: float, style: Style) -> TTFont:
-    """WenYuan scaled into double cells of `latin`, centred on `midline`, and sheared to its italic angle."""
-    upem = latin["head"].unitsPerEm
-    advance = 2 * latin["hmtx"][unicode_cmap(latin)[ord(" ")]][0]
-    path = CACHE / f"wenyuan-{style.weight}-{upem}-{advance}-{midline:g}.ttf"
+def cjk_glyphs(weight: int, grid: Grid) -> TTFont:
+    """WenYuan at `weight`, scaled into double cells of `grid`, centred on its midline, and sheared."""
+    advance = 2 * grid.cell
+    path = CACHE / f"wenyuan-{weight}-{grid.upem}-{advance}-{grid.midline:g}.ttf"
     if not path.exists():
-        subset_wenyuan()
-        print(f"instantiate wenyuan {style.weight}")
-        font = TTFont(WENYUAN_SUBSET)
-        instancer.instantiateVariableFont(font, {"wght": style.weight, "ital": 0}, inplace=True)
-        scale_upem(font, upem)
+        font = TTFont(wenyuan_subset())
+        print(f"instantiate wenyuan {weight}")
+        instancer.instantiateVariableFont(font, {"wght": weight, "ital": 0}, inplace=True)
+        scale_upem(font, grid.upem)
         hmtx = font["hmtx"]
         for name in font.getGlyphOrder():
             hmtx[name] = (advance, 0)
         # wenyuan's typo metrics span the ideographic em box, which centres its hanzi.
         em_centre = (font["OS/2"].sTypoAscender + font["OS/2"].sTypoDescender) / 2
-        shift_x = (advance - upem * CJK_SCALE) / 2
-        shift_y = midline - em_centre * CJK_SCALE
+        shift_x = (advance - grid.upem * CJK_SCALE) / 2
+        shift_y = grid.midline - em_centre * CJK_SCALE
         transform_glyphs(font, Transform(CJK_SCALE, 0, 0, CJK_SCALE, shift_x, shift_y))
         removeOverlaps(font)
         font.save(path)
     font = TTFont(path)
-    if style.italic:
-        skew = math.tan(math.radians(-latin["post"].italicAngle))
-        transform_glyphs(font, Transform(1, 0, skew, 1, -skew * midline, 0))
+    if grid.slant:
+        transform_glyphs(font, Transform(1, 0, grid.slant, 1, -grid.slant * grid.midline, 0))
     return font
 
 
@@ -250,10 +272,10 @@ def merge_glyphs(latin: TTFont, source: TTFont) -> None:
     latin["OS/2"].recalcCodePageRanges(latin)
 
 
-def set_line_height(font: TTFont, midline: float) -> None:
-    """Centre a `LINE_HEIGHT` line box on `midline`."""
-    line_height = round(LINE_HEIGHT * font["head"].unitsPerEm)
-    ascent = round(midline + line_height / 2)
+def set_line_height(font: TTFont, grid: Grid) -> None:
+    """Centre a `LINE_HEIGHT` line box on the midline of `grid`."""
+    line_height = round(LINE_HEIGHT * grid.upem)
+    ascent = round(grid.midline + line_height / 2)
     descent = ascent - line_height
     hhea, os2 = font["hhea"], font["OS/2"]
     hhea.ascent, hhea.descent, hhea.lineGap = ascent, descent, 0
@@ -261,11 +283,11 @@ def set_line_height(font: TTFont, midline: float) -> None:
     os2.usWinAscent, os2.usWinDescent = ascent, -descent
 
 
-def rename(font: TTFont, family: str, style: Style, cjk_copyright: str | None) -> None:
+def rename(font: TTFont, family: str, style: Style, copyright_notice: str) -> None:
     postscript_name = f"{family}-{style.slug}"
     name = font["name"]
     values = {
-        0: f"{name.getDebugName(0)} {cjk_copyright}",
+        0: copyright_notice,
         1: family,
         2: style.name,
         3: f"{VERSION};{postscript_name}",
@@ -288,14 +310,15 @@ def rename(font: TTFont, family: str, style: Style, cjk_copyright: str | None) -
     font["head"].macStyle = style.bold | style.italic << 1
 
 
-def build(latin: TTFont, family: str, style: Style) -> Path:
-    cap = latin["glyf"][unicode_cmap(latin)[ord("H")]]
-    midline = (cap.yMin + cap.yMax) / 2
-    cjk = cjk_glyphs(latin, midline, style)
+def build(family: str, style: Style) -> Path:
+    latin = FAMILIES[family](style)
+    grid = Grid.of(latin)
+    cjk = cjk_glyphs(style.weight, grid)
+    copyright_notice = f"{latin['name'].getDebugName(0)} {cjk['name'].getDebugName(0)}"
     merge_glyphs(latin, cjk)
-    set_line_height(latin, midline)
-    latin["post"].underlineThickness = round(UNDERLINE_THICKNESS * latin["head"].unitsPerEm)
-    rename(latin, family, style, cjk["name"].getDebugName(0))
+    set_line_height(latin, grid)
+    latin["post"].underlineThickness = round(UNDERLINE_THICKNESS * grid.upem)
+    rename(latin, family, style, copyright_notice)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     output = OUTPUT / f"{latin['name'].getDebugName(6)}.ttf"
     latin.save(output)
@@ -317,7 +340,7 @@ def main() -> None:
     for family in args.family or FAMILIES:
         for style in STYLES:
             if not args.style or style.name in args.style:
-                print(f"built {build(FAMILIES[family](style), family, style)}")
+                print(f"built {build(family, style)}")
 
 
 if __name__ == "__main__":
