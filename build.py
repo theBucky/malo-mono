@@ -1,4 +1,4 @@
-"""Build Malo, Malokeley or Maloist with WenYuan Sans SC CJK glyphs at 2:1 width."""
+"""Build the Malo fonts: latin monospace glyphs with WenYuan Sans SC CJK glyphs at 2:1 width."""
 
 import argparse
 import io
@@ -142,7 +142,22 @@ def load_goeist_mono(style: Style) -> TTFont:
     return font
 
 
-FAMILIES = {"Malo": load_menlo, "Malokeley": load_berkeley_mono, "Maloist": load_goeist_mono}
+def load_maple_mono(style: Style) -> TTFont:
+    variant = "-Italic" if style.italic else ""
+    font = TTFont(UPSTREAM / f"MapleMonoNL{variant}[wght].ttf")
+    instancer.instantiateVariableFont(font, {"wght": style.weight}, inplace=True)
+    # the instancer leaves a STAT table that names no regular weight, so drop the table and its names.
+    del font["STAT"]
+    font["name"].removeUnusedNames(font)
+    return font
+
+
+FAMILIES = {
+    "Malo": load_menlo,
+    "Malokeley": load_berkeley_mono,
+    "Maloist": load_goeist_mono,
+    "Malople": load_maple_mono,
+}
 
 
 def subset_wenyuan() -> None:
@@ -247,7 +262,7 @@ def set_line_height(font: TTFont, midline: float) -> None:
 
 
 def rename(font: TTFont, family: str, style: Style, cjk_copyright: str | None) -> None:
-    postscript_name = f"{family.replace(' ', '')}-{style.slug}"
+    postscript_name = f"{family}-{style.slug}"
     name = font["name"]
     values = {
         0: f"{name.getDebugName(0)} {cjk_copyright}",
