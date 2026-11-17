@@ -18,7 +18,13 @@ uv run build.py --family Malo --style Regular  # filters repeat and combine
 uv run build.py --style Bold --clean           # clear build/ first
 ```
 
-the first run copies `Menlo.ttc` from `/System/Library/Fonts/` and downloads wenyuan into `sources/upstream/`. maloist downloads the goeist mono release there too. malokeley expects the four berkeley mono files (`BerkeleyMono-Regular.ttf`, `-Oblique`, `-Bold`, `-Bold-Oblique`) in the same directory. malople expects the two maple mono nl variable fonts (`MapleMonoNL[wght].ttf`, `MapleMonoNL-Italic[wght].ttf`) there as well. open `specimen.html` in a browser to see every font.
+the build only reads these latin fonts from `sources/upstream/`, so place them there first:
+
+- malo: `Menlo.ttc`, copied from `/System/Library/Fonts/`
+- malokeley: the four berkeley mono files (`BerkeleyMono-Regular.ttf`, `-Oblique`, `-Bold`, `-Bold-Oblique`)
+- malople: the two maple mono nl variable fonts (`MapleMonoNL[wght].ttf`, `MapleMonoNL-Italic[wght].ttf`)
+
+wenyuan and goeist mono are downloaded from their latest github releases into `build/`, beside the intermediate fonts, so clearing `build/` also updates both. open `specimen.html` in a browser to see every font.
 
 ## how the build works
 

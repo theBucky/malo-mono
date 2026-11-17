@@ -2,6 +2,7 @@
 
 import argparse
 import io
+import json
 import math
 import shutil
 import urllib.request
@@ -18,20 +19,12 @@ from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 from fontTools.varLib import instancer
 
 ROOT = Path(__file__).parent
+# fonts placed by hand, which the build only reads.
 UPSTREAM = ROOT / "sources" / "upstream"
+# downloads and intermediate fonts, which the build recreates when missing.
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
-MENLO_URL = "file:///System/Library/Fonts/Menlo.ttc"
-MENLO_TTC = UPSTREAM / "Menlo.ttc"
-GOEIST_URL = (
-    "https://github.com/shadcn-labs/goeist-font/releases/download/v0.1.0/GoeistMono-v0.1.0.zip"
-)
-GOEIST_ZIP = UPSTREAM / "goeist" / "GoeistMono-v0.1.0.zip"
-WENYUAN_URL = (
-    "https://github.com/takushun-wu/WenYuanFonts/releases/download/v1.100/WenYuanSansSCVF.ttf"
-)
-WENYUAN_VF = UPSTREAM / "wenyuan" / "WenYuanSansSCVF.ttf"
 WENYUAN_SUBSET = CACHE / "wenyuan-subset.ttf"
 
 VERSION = "0.1"
@@ -83,12 +76,21 @@ STYLES = (
 )
 
 
-def fetch(url: str, dest: Path) -> None:
-    if dest.exists():
-        return
-    print(f"download {url}")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlretrieve(url, dest)
+def fetch_release(repo: str, asset: str) -> Path:
+    """Download `asset` of the latest `repo` release into the cache unless a copy is there.
+
+    `{tag}` in `asset` stands for the release tag.
+    """
+    dest = CACHE / asset.format(tag="latest")
+    if not dest.exists():
+        latest = f"https://api.github.com/repos/{repo}/releases/latest"
+        with urllib.request.urlopen(latest) as response:
+            tag = json.load(response)["tag_name"]
+        url = f"https://github.com/{repo}/releases/download/{tag}/{asset.format(tag=tag)}"
+        print(f"download {url}")
+        CACHE.mkdir(exist_ok=True)
+        urllib.request.urlretrieve(url, dest)
+    return dest
 
 
 def unicode_cmap(font: TTFont) -> dict[int, str]:
@@ -98,8 +100,8 @@ def unicode_cmap(font: TTFont) -> dict[int, str]:
 
 
 def load_menlo(style: Style) -> TTFont:
-    fetch(MENLO_URL, MENLO_TTC)
-    fonts = {font["name"].getDebugName(6): font for font in TTCollection(MENLO_TTC).fonts}
+    menlo = TTCollection(UPSTREAM / "Menlo.ttc")
+    fonts = {font["name"].getDebugName(6): font for font in menlo.fonts}
     font = fonts[f"Menlo-{style.slug}"]
     if style.bold:
         # menlo bold has no box drawing, so take the upright regular glyphs as menlo italic does.
@@ -120,8 +122,8 @@ def load_berkeley_mono(style: Style) -> TTFont:
 
 
 def load_goeist_mono(style: Style) -> TTFont:
-    fetch(GOEIST_URL, GOEIST_ZIP)
-    with zipfile.ZipFile(GOEIST_ZIP) as archive:
+    release = fetch_release("shadcn-labs/goeist-font", "GoeistMono-{tag}.zip")
+    with zipfile.ZipFile(release) as archive:
         font = TTFont(io.BytesIO(archive.read(f"GoeistMono/ttf/GoeistMono-{style.slug}.ttf")))
     # ligatures, including the coding ligatures in ss11, draw several characters in one cell.
     features = {
@@ -163,9 +165,8 @@ FAMILIES = {
 def subset_wenyuan() -> None:
     if WENYUAN_SUBSET.exists():
         return
-    fetch(WENYUAN_URL, WENYUAN_VF)
+    font = TTFont(fetch_release("takushun-wu/WenYuanFonts", "WenYuanSansSCVF.ttf"))
     print("subset wenyuan")
-    font = TTFont(WENYUAN_VF)
     options = subset.Options()
     options.drop_tables += ["BASE", "GDEF", "GPOS", "GSUB", "MVAR", "STAT", "VVAR", "vhea", "vmtx"]
     subsetter = subset.Subsetter(options)
@@ -180,7 +181,6 @@ def subset_wenyuan() -> None:
         ]
     )
     subsetter.subset(font)
-    WENYUAN_SUBSET.parent.mkdir(parents=True, exist_ok=True)
     font.save(WENYUAN_SUBSET)
 
 
@@ -309,7 +309,7 @@ def main() -> None:
     parser.add_argument(
         "--clean",
         action="store_true",
-        help="drop cached intermediate fonts, as a run without filters does",
+        help="drop cached downloads and intermediate fonts, as a run without filters does",
     )
     args = parser.parse_args()
     if args.clean or not (args.family or args.style):
