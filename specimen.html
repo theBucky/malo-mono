@@ -21,11 +21,16 @@
   @font-face { font-family: Malople; src: url(fonts/Malople-Italic.ttf); font-weight: 400; font-style: italic; }
   @font-face { font-family: Malople; src: url(fonts/Malople-Bold.ttf); font-weight: 700; font-style: normal; }
   @font-face { font-family: Malople; src: url(fonts/Malople-BoldItalic.ttf); font-weight: 700; font-style: italic; }
+  @font-face { font-family: Maloha; src: url(fonts/Maloha-Regular.ttf); font-weight: 400; font-style: normal; }
+  @font-face { font-family: Maloha; src: url(fonts/Maloha-Italic.ttf); font-weight: 400; font-style: italic; }
+  @font-face { font-family: Maloha; src: url(fonts/Maloha-Bold.ttf); font-weight: 700; font-style: normal; }
+  @font-face { font-family: Maloha; src: url(fonts/Maloha-BoldItalic.ttf); font-weight: 700; font-style: italic; }
 
   :root { color-scheme: light dark; --family: Malo; }
   :root:has(#malokeley:target) { --family: Malokeley; }
   :root:has(#maloist:target) { --family: Maloist; }
   :root:has(#malople:target) { --family: Malople; }
+  :root:has(#maloha:target) { --family: Maloha; }
   pre { font-family: var(--family), monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   :root:not(:has(:target)) #malo, :target { color: inherit; text-decoration: none; font-weight: 700; outline: none; }
   .i { font-style: italic; }
@@ -35,13 +40,14 @@
 </head>
 <body>
 <pre>Subject: Malo specimen
-Family:  <a id="malo" href="#malo">Malo</a> | <a id="malokeley" href="#malokeley">Malokeley</a> | <a id="maloist" href="#maloist">Maloist</a> | <a id="malople" href="#malople">Malople</a><span id="missing" hidden>
+Family:  <a id="malo" href="#malo">Malo</a> | <a id="malokeley" href="#malokeley">Malokeley</a> | <a id="maloist" href="#maloist">Maloist</a> | <a id="malople" href="#malople">Malople</a> | <a id="maloha" href="#maloha">Maloha</a><span id="missing" hidden>
 Warning: fonts missing, run `uv run build.py`</span>
 
 Malo      = Menlo         + 文渊黑体
 Malokeley = Berkeley Mono + 文渊黑体
 Maloist   = Goeist Mono   + 文渊黑体
 Malople   = Maple Mono    + 文渊黑体
+Maloha    = Hack          + 文渊黑体
 
 每个汉字恰好占两个西文格，表格与代码混排时保持对齐。</pre>
 <script>

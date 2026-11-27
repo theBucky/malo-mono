@@ -9,20 +9,23 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Self
 
 from fontTools import subset
 from fontTools.misc.transform import Transform
+from fontTools.pens.cu2quPen import Cu2QuPointPen
+from fontTools.pens.ttGlyphPen import TTGlyphPointPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.ttLib.scaleUpem import scale_upem
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from fontTools.ufoLib.glifLib import readGlyphFromString
 from fontTools.varLib import instancer
 
 ROOT = Path(__file__).parent
 # fonts placed by hand, which the build only reads.
 UPSTREAM = ROOT / "sources" / "upstream"
-# downloads and intermediate fonts, which the build recreates when missing.
 CACHE = ROOT / "build"
 OUTPUT = ROOT / "fonts"
 
@@ -108,11 +111,14 @@ def fetch_release(repo: str, asset: str) -> Path:
         latest = f"https://api.github.com/repos/{repo}/releases/latest"
         with urllib.request.urlopen(latest) as response:
             tag = json.load(response)["tag_name"]
-        url = f"https://github.com/{repo}/releases/download/{tag}/{asset.format(tag=tag)}"
-        print(f"download {url}")
-        CACHE.mkdir(exist_ok=True)
-        urllib.request.urlretrieve(url, dest)
+        download(f"https://github.com/{repo}/releases/download/{tag}/{asset.format(tag=tag)}", dest)
     return dest
+
+
+def download(url: str, dest: Path) -> None:
+    print(f"download {url}")
+    CACHE.mkdir(exist_ok=True)
+    urllib.request.urlretrieve(url, dest)
 
 
 def unicode_cmap(font: TTFont) -> dict[int, str]:
@@ -176,11 +182,37 @@ def load_maple_mono(style: Style) -> TTFont:
     return font
 
 
+def load_hack(style: Style) -> TTFont:
+    release = fetch_release("source-foundry/Hack", "Hack-{tag}-ttf.zip")
+    with zipfile.ZipFile(release) as archive:
+        font = TTFont(io.BytesIO(archive.read(f"ttf/Hack-{style.slug}.ttf")))
+    # alt-hack pull request 47 adds the straight l and never merged, so pin its head.
+    commit = "a80cc886817949121bee4d0fbfac363d060bac4b"
+    designs = CACHE / f"alt-hack-{commit}.zip"
+    if not designs.exists():
+        download(f"https://github.com/source-foundry/alt-hack/archive/{commit}.zip", designs)
+    cmap, glyf, hmtx = unicode_cmap(font), font["glyf"], font["hmtx"]
+    with zipfile.ZipFile(designs) as archive:
+        for design in ("zero-forwardslash", "i-slab", "l-slab"):
+            glyphs = f"alt-hack-{commit}/glyphs/{design}/{style.slug.lower()}/"
+            for glif in zipfile.Path(archive, glyphs).iterdir():
+                source = SimpleNamespace()
+                pen = TTGlyphPointPen(None)
+                readGlyphFromString(glif.read_bytes(), source, Cu2QuPointPen(pen, max_err=1))
+                glyph = pen.glyph()
+                glyph.recalcBounds(glyf)
+                name = cmap[source.unicodes[0]]
+                glyf[name] = glyph
+                hmtx[name] = (source.width, glyph.xMin)
+    return font
+
+
 FAMILIES = {
     "Malo": load_menlo,
     "Malokeley": load_berkeley_mono,
     "Maloist": load_goeist_mono,
     "Malople": load_maple_mono,
+    "Maloha": load_hack,
 }
 
 
