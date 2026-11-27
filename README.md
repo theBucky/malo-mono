@@ -7,7 +7,7 @@ variants swap the latin glyphs:
 - malokeley: [berkeley mono](https://usgraphics.com/products/berkeley-mono)
 - maloist: [goeist mono](https://github.com/shadcn-labs/goeist-font), a rounded geist mono
 - malople: [maple mono](https://github.com/subframe7536/maple-font) nl, the cut without ligatures
-- maloha: [hack](https://github.com/source-foundry/Hack), with the slashed zero, straight i and straight l from [alt-hack](https://github.com/source-foundry/alt-hack)
+- maloha: [hack](https://github.com/source-foundry/Hack), with the slashed zero and straight i from [alt-hack](https://github.com/source-foundry/alt-hack)
 
 ## build
 
@@ -34,7 +34,7 @@ wenyuan, goeist mono and hack are downloaded from their latest github releases i
 3. for italics, slant the cjk glyphs to the latin italic angle.
 4. add the cjk glyphs to the latin font, set the line height to 1.3 em around the same middle, make the underline 0.1 em thick, and rename the font. ghostty draws box drawing itself as thick as the underline, so every font gets the same box lines as berkeley mono.
 
-latin glyphs stay as they ship, apart from the changes below. menlo bold has no box drawing, so malo bold takes those glyphs from menlo regular, the same ones menlo italic uses. goeist mono ships coding ligatures, which draw several characters in one cell, so maloist drops them. maple mono ships as variable fonts, so malople pins the weight at 400 and 700. maloha swaps the hack zero for the slashed one from alt-hack, and the curved i and l, with their accented forms, for straight ones. the straight l comes from alt-hack pull request 47, which never merged. the em size, cell width, the capital middle and the italic angle all come from the latin font. to change cjk size or line height, edit `CJK_SCALE` or `LINE_HEIGHT` in `build.py` and rebuild with `--clean`.
+latin glyphs stay as they ship, apart from the changes below. menlo bold has no box drawing, so malo bold takes those glyphs from menlo regular, the same ones menlo italic uses. goeist mono ships coding ligatures, which draw several characters in one cell, so maloist drops them. maple mono ships as variable fonts, so malople pins the weight at 400 and 700. maloha swaps in the slashed zero and the straight i, with its accented forms, from alt-hack. the em size, cell width, the capital middle and the italic angle all come from the latin font. to change cjk size or line height, edit `CJK_SCALE` or `LINE_HEIGHT` in `build.py` and rebuild with `--clean`.
 
 ## licenses
 

@@ -186,16 +186,16 @@ def load_hack(style: Style) -> TTFont:
     release = fetch_release("source-foundry/Hack", "Hack-{tag}-ttf.zip")
     with zipfile.ZipFile(release) as archive:
         font = TTFont(io.BytesIO(archive.read(f"ttf/Hack-{style.slug}.ttf")))
-    # alt-hack pull request 47 adds the straight l and never merged, so pin its head.
-    commit = "a80cc886817949121bee4d0fbfac363d060bac4b"
+    commit = "9fab7328cfc208046cb7f3d713ec97a724d8219a"
     designs = CACHE / f"alt-hack-{commit}.zip"
     if not designs.exists():
         download(f"https://github.com/source-foundry/alt-hack/archive/{commit}.zip", designs)
     cmap, glyf, hmtx = unicode_cmap(font), font["glyf"], font["hmtx"]
     with zipfile.ZipFile(designs) as archive:
-        for design in ("zero-forwardslash", "i-slab", "l-slab"):
-            glyphs = f"alt-hack-{commit}/glyphs/{design}/{style.slug.lower()}/"
-            for glif in zipfile.Path(archive, glyphs).iterdir():
+        glyphs = zipfile.Path(archive, f"alt-hack-{commit}/glyphs/")
+        # the slashed zero, and the straight i with its accented forms.
+        for design in ("u0030-forwardslash", "u*-slab"):
+            for glif in glyphs.glob(f"{design}/{style.slug.lower()}/*.glif"):
                 source = SimpleNamespace()
                 pen = TTGlyphPointPen(None)
                 readGlyphFromString(glif.read_bytes(), source, Cu2QuPointPen(pen, max_err=1))
